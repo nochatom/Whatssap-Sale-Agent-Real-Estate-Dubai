@@ -1,0 +1,190 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum CampaignStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+enum TemplateStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  READ
+  FAILED
+  RECEIVED
+}
+
+enum AiDecisionParseStatus {
+  SUCCESS
+  PARSE_FAILURE
+}
+
+enum FollowUpStatus {
+  PENDING
+  SENT
+  CANCELLED
+}
+
+enum SuppressionReason {
+  OPT_OUT
+  COMPLAINT
+  BOUNCED
+  MANUAL
+}
+
+enum AssetType {
+  VIDEO
+  IMAGE
+  TEMPLATE_MEDIA
+}
+
+model Campaign {
+  id                   String         @id @default(cuid())
+  name                 String
+  status               CampaignStatus @default(DRAFT)
+  templateName         String
+  templateStatus       TemplateStatus @default(PENDING)
+  dailyBudgetPerNumber Int
+  senderPhoneNumberId  String
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  conversations Conversation[]
+  assets        Asset[]
+
+  @@index([senderPhoneNumberId])
+}
+
+model Lead {
+  id         String   @id @default(cuid())
+  phoneE164  String   @unique
+  name       String?
+  market     String?
+  language   String?
+  optedIn    Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  conversations Conversation[]
+  followUps     FollowUp[]
+  assets        Asset[]
+}
+
+model Conversation {
+  id            String   @id @default(cuid())
+  leadId        String
+  campaignId    String?
+  status        String   @default("open")
+  salesStage    String?
+  lastInboundAt DateTime?
+  lastOutboundAt DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  lead     Lead      @relation(fields: [leadId], references: [id])
+  campaign Campaign? @relation(fields: [campaignId], references: [id])
+  messages Message[]
+  aiDecisions AiDecision[]
+  followUps   FollowUp[]
+
+  @@index([leadId])
+  @@index([campaignId])
+}
+
+model Message {
+  id              String           @id @default(cuid())
+  conversationId  String
+  direction       MessageDirection
+  waMessageId     String?          @unique
+  idempotencyKey  String           @unique
+  type            String
+  body            String?
+  templateName    String?
+  status          MessageStatus
+  createdAt       DateTime         @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id])
+  aiDecisions  AiDecision[]
+
+  @@index([conversationId])
+}
+
+model AiDecision {
+  id              String                 @id @default(cuid())
+  conversationId  String
+  messageId       String?
+  rawInput        Json
+  rawOutput       String
+  parseStatus     AiDecisionParseStatus
+  parsedDecision  Json?
+  createdAt       DateTime               @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id])
+  message      Message?     @relation(fields: [messageId], references: [id])
+  followUps    FollowUp[]
+
+  @@index([conversationId])
+}
+
+model FollowUp {
+  id                String         @id @default(cuid())
+  conversationId    String
+  leadId            String
+  scheduledFor      DateTime
+  reason            String
+  status            FollowUpStatus @default(PENDING)
+  triggerAiDecisionId String?
+  triggerRunId      String?
+  createdAt         DateTime       @default(now())
+
+  conversation    Conversation @relation(fields: [conversationId], references: [id])
+  lead            Lead         @relation(fields: [leadId], references: [id])
+  triggerAiDecision AiDecision? @relation(fields: [triggerAiDecisionId], references: [id])
+
+  @@index([conversationId])
+  @@index([leadId])
+}
+
+model SuppressionList {
+  id        String            @id @default(cuid())
+  phoneE164 String            @unique
+  reason    SuppressionReason
+  source    String?
+  createdAt DateTime          @default(now())
+}
+
+model Asset {
+  id         String    @id @default(cuid())
+  campaignId String?
+  leadId     String?
+  type       AssetType
+  url        String
+  metadata   Json?
+  createdAt  DateTime  @default(now())
+
+  campaign Campaign? @relation(fields: [campaignId], references: [id])
+  lead     Lead?     @relation(fields: [leadId], references: [id])
+
+  @@index([campaignId])
+  @@index([leadId])
+}
