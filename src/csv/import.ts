@@ -53,8 +53,7 @@ export async function importLeadsFromCsv(
   const results: CsvImportRowResult[] = [];
   const seenInFile = new Set<string>();
 
-  for (let i = 0; i < records.length; i++) {
-    const row = records[i];
+  for (const [i, row] of records.entries()) {
     const rowNumber = i + 2; // +1 for 0-index, +1 for the header row
     const phoneRaw = row.phone ?? "";
 

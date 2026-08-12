@@ -6,6 +6,11 @@ interface EnvCheck {
   note: string;
 }
 
+// Reads process.env at request time — must not be statically prerendered,
+// or these SET/NOT SET checks would reflect the build environment instead
+// of the actual deployed server's configuration.
+export const dynamic = "force-dynamic";
+
 /**
  * Server component. Reads process.env directly on the server and renders
  * only booleans (set / not set) — actual values are never read into a

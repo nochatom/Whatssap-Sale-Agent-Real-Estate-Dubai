@@ -19,7 +19,6 @@ const LINKS = [
   { href: "/campaigns", label: "Campaigns" },
   { href: "/conversations", label: "Conversations" },
   { href: "/leads#leads-list", label: "Send" },
-  { href: "/webhook-status", label: "Webhook Status" },
 ];
 
 /**

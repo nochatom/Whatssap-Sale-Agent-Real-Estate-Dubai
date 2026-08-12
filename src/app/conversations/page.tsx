@@ -1,6 +1,10 @@
 import { prisma } from "@/lib/prisma";
 import { colors, space, sectionStyle, fieldLabel } from "../_lib/ui-tokens";
 
+// Queries the DB on every load — must render per-request, not be statically
+// prerendered at build time, when no DATABASE_URL is available.
+export const dynamic = "force-dynamic";
+
 /** Read-only. Server component querying existing Conversation/Lead/Campaign/Message models directly. */
 export default async function ConversationsPage() {
   const conversations = await prisma.conversation.findMany({
