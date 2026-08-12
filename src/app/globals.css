@@ -1,0 +1,40 @@
+/*
+ * Theme values consumed via var(--color-*) from src/app/_lib/ui-tokens.ts.
+ * Dark (:root, default) traces to DESIGN.md (linear.app template) — see the
+ * comment in ui-tokens.ts for exactly which values are and aren't sourced
+ * from that file. Light ([data-theme="light"]) has no DESIGN.md source at
+ * all (Linear's real site ships no light mode) — every light value below
+ * was constructed to the same WCAG AA bar (>=4.5:1 for body text, >=3:1 for
+ * large/UI elements), anchored on Linear's own documented inverse-canvas
+ * (#ffffff) and inverse-ink (#000000) tokens.
+ */
+
+:root {
+  --color-primary: #5e6ad2; /* colors.primary */
+  --color-on-primary: #ffffff; /* colors.on-primary */
+  --color-ink: #f7f8f8; /* colors.ink */
+  --color-body: #d0d6e0; /* colors.ink-muted */
+  --color-muted: #8a8f98; /* colors.ink-subtle — ~6.6:1 on canvas */
+  --color-canvas: #010102; /* colors.canvas */
+  --color-canvas-elevated: #0f1011; /* colors.surface-1 */
+  --color-hairline: #23252a; /* colors.hairline */
+  --color-hairline-strong: #34343a; /* colors.hairline-strong */
+  --color-info: #5e6ad2; /* reuses colors.primary — no separate info color in the file */
+  --color-success: #27a644; /* colors.semantic-success */
+  --color-warning: #eb5757; /* not in DESIGN.md — standard dark-UI red */
+}
+
+[data-theme="light"] {
+  --color-primary: #5e6ad2; /* same accent both themes */
+  --color-on-primary: #ffffff;
+  --color-ink: #000000; /* colors.inverse-ink, documented */
+  --color-body: #3c3c43; /* constructed — ~11:1 on white */
+  --color-muted: #6b6f76; /* constructed — ~5:1 on white */
+  --color-canvas: #ffffff; /* colors.inverse-canvas, documented */
+  --color-canvas-elevated: #f5f6f6; /* colors.inverse-surface-1, documented */
+  --color-hairline: #e3e4e8; /* constructed */
+  --color-hairline-strong: #cfd0d6; /* constructed */
+  --color-info: #5e6ad2;
+  --color-success: #1a8a37; /* darkened for AA on white */
+  --color-warning: #c23535; /* darkened for AA on white — ~5.5:1 */
+}

@@ -2,30 +2,36 @@ import type { CSSProperties } from "react";
 
 /**
  * Single shared visual system for the whole app (root, /leads, /campaigns,
- * /conversations, /webhook-status, Nav). Sourced from DESIGN.md (linear.app
- * template) — near-black canvas, one lavender accent, actually-rounded
- * corners (Linear uses rounded.md/8px on buttons, the opposite of the prior
- * Ferrari theme's sharp 0px). All values below trace to a DESIGN.md token
- * except `semanticWarning` — the file has no error/warning color at all
- * (its own Known Gaps section says so: "Form-field error and validation
- * styling is not visible on the inspected pages," and "Linear avoids
- * saturated reds... on the marketing canvas"). That one color is a
- * standard dark-UI red, not sourced from the file — flagged here rather
- * than silently presented as if it were.
+ * /conversations, /webhook-status, Nav). Values are CSS custom-property
+ * references, not literal hex — the actual dark/light values live in
+ * globals.css (`:root` for dark, `[data-theme="light"]` for light), so a
+ * theme switch (see ThemeToggle) needs no re-render of server components.
+ *
+ * Dark values trace to DESIGN.md (linear.app template) — near-black canvas,
+ * one lavender accent, actually-rounded corners (rounded.md/8px, the
+ * opposite of the prior Ferrari theme's sharp 0px). Two things are NOT
+ * sourced from the file, flagged rather than presented as if they were:
+ * `semanticWarning` (the file has no error/warning color at all — its own
+ * Known Gaps section says so) and the entire light theme (DESIGN.md
+ * explicitly states Linear's real site ships no light mode — "Don't ship a
+ * light-mode marketing page"). The light values in globals.css are a
+ * standard, WCAG-AA-checked construction anchored on Linear's own
+ * documented `inverse-canvas`/`inverse-ink` tokens (white/black), not
+ * extracted from anywhere in the file.
  */
 export const colors = {
-  primary: "#5e6ad2", // colors.primary
-  onPrimary: "#ffffff", // colors.on-primary
-  ink: "#f7f8f8", // colors.ink
-  body: "#d0d6e0", // colors.ink-muted
-  mutedText: "#8a8f98", // colors.ink-subtle — ~6.6:1 on canvas, passes WCAG AA
-  canvas: "#010102", // colors.canvas
-  canvasElevated: "#0f1011", // colors.surface-1
-  hairline: "#23252a", // colors.hairline
-  hairlineStrong: "#34343a", // colors.hairline-strong
-  semanticInfo: "#5e6ad2", // reuses colors.primary — the file defines no separate info color
-  semanticSuccess: "#27a644", // colors.semantic-success — the file's only semantic color
-  semanticWarning: "#eb5757", // NOT in DESIGN.md — see file-level note above
+  primary: "var(--color-primary)",
+  onPrimary: "var(--color-on-primary)",
+  ink: "var(--color-ink)",
+  body: "var(--color-body)",
+  mutedText: "var(--color-muted)",
+  canvas: "var(--color-canvas)",
+  canvasElevated: "var(--color-canvas-elevated)",
+  hairline: "var(--color-hairline)",
+  hairlineStrong: "var(--color-hairline-strong)",
+  semanticInfo: "var(--color-info)",
+  semanticSuccess: "var(--color-success)",
+  semanticWarning: "var(--color-warning)",
 };
 
 export const space = { xxs: 8, xs: 16, sm: 24, md: 32, lg: 48 };

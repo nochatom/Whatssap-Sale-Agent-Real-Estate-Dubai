@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { colors, space } from "../_lib/ui-tokens";
+import ThemeToggle from "./ThemeToggle";
 
 /**
  * Leads and Send both point at the same #leads-list anchor on /leads — that
@@ -56,6 +57,7 @@ export default function Nav() {
           {link.label}
         </Link>
       ))}
+      <ThemeToggle />
     </nav>
   );
 }
