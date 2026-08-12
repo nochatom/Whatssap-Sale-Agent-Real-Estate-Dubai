@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const followUpFindUniqueOrThrow = vi.fn();
 const followUpUpdate = vi.fn();
+const followUpCreate = vi.fn();
 const conversationFindUniqueOrThrow = vi.fn();
 const messageFindMany = vi.fn();
 const aiDecisionCreate = vi.fn();
@@ -12,6 +13,7 @@ vi.mock("@/lib/prisma", () => ({
     followUp: {
       findUniqueOrThrow: (...args: unknown[]) => followUpFindUniqueOrThrow(...args),
       update: (...args: unknown[]) => followUpUpdate(...args),
+      create: (...args: unknown[]) => followUpCreate(...args),
     },
     conversation: {
       findUniqueOrThrow: (...args: unknown[]) => conversationFindUniqueOrThrow(...args),
@@ -32,9 +34,8 @@ vi.mock("@trigger/send-outbound", () => ({
   sendOutboundTask: { trigger: (...args: unknown[]) => sendOutboundTrigger(...args) },
 }));
 
-const { runScheduledFollowUp, scheduleFollowUp, scheduleFollowUpTask } = await import(
-  "@trigger/schedule-followup"
-);
+const { runScheduledFollowUp, scheduleFollowUp, scheduleFollowUpTask, maybeScheduleFollowUp } =
+  await import("@trigger/schedule-followup");
 
 const CREATED_AT = new Date("2026-08-01T10:00:00Z");
 const PAYLOAD = { conversationId: "conv_1", leadId: "lead_1", followUpId: "fu_1" };
@@ -149,10 +150,11 @@ describe("runScheduledFollowUp", () => {
     expect(sendOutboundTrigger).not.toHaveBeenCalled();
   });
 
-  it("cancels without sending when the conversation has no associated campaign", async () => {
+  it("cancels without sending when there is no campaign and no known sender number", async () => {
     conversationFindUniqueOrThrow.mockResolvedValue({
       id: "conv_1",
       campaignId: null,
+      senderPhoneNumberId: null,
       lastInboundAt: new Date("2026-08-01T09:00:00Z"),
       lead: { id: "lead_1", phoneE164: "+15551234567" },
     });
@@ -160,8 +162,38 @@ describe("runScheduledFollowUp", () => {
 
     const result = await runScheduledFollowUp(PAYLOAD);
 
-    expect(result).toEqual({ actioned: false, reason: "conversation has no associated campaign" });
+    expect(result).toEqual({
+      actioned: false,
+      reason: "no campaign and no known sender number for this conversation",
+    });
     expect(sendOutboundTrigger).not.toHaveBeenCalled();
+  });
+
+  it("sends organically, using conversation.senderPhoneNumberId, when there is no campaign", async () => {
+    conversationFindUniqueOrThrow.mockResolvedValue({
+      id: "conv_1",
+      campaignId: null,
+      senderPhoneNumberId: "999888777",
+      lastInboundAt: new Date("2026-08-01T09:00:00Z"),
+      lead: { id: "lead_1", phoneE164: "+15551234567" },
+    });
+    invokeSkillMock.mockResolvedValue(successDecision("reply"));
+
+    const result = await runScheduledFollowUp(PAYLOAD);
+
+    expect(result).toEqual({ actioned: true });
+    expect(campaignFindUniqueOrThrow).not.toHaveBeenCalled();
+    expect(sendOutboundTrigger).toHaveBeenCalledWith(
+      {
+        conversationId: "conv_1",
+        campaignId: undefined,
+        leadId: "lead_1",
+        senderPhoneNumberId: "999888777",
+        idempotencyKey: "out:followup:fu_1",
+        body: "Still there? Happy to answer anything.",
+      },
+      { concurrencyKey: "999888777" },
+    );
   });
 
   it("triggers send-outbound and marks the follow-up SENT when the Skill returns a reply", async () => {
@@ -235,6 +267,160 @@ describe("scheduleFollowUp", () => {
 
     await expect(scheduleFollowUp("fu_1")).rejects.toThrow(/not PENDING/);
     expect(triggerSpy).not.toHaveBeenCalled();
+
+    triggerSpy.mockRestore();
+  });
+});
+
+describe("maybeScheduleFollowUp", () => {
+  const followUpDecision = {
+    clientAnalysis: {
+      clientSector: "Airbnb host",
+      clientType: "one",
+      salesStage: "follow-up",
+      clientIntent: "unclear",
+      psychologicalInterpretation: "Most likely busy.",
+      buyingSignal: { level: "LOW" as const, evidence: "message unopened" },
+      mainConcern: "unknown",
+      whatClientIsLookingFor: "unknown",
+    },
+    salesStrategy: { bestNextAction: "wait", whatToAvoid: "chasing", objectiveOfReply: "re-engage" },
+    recommendedReply: {
+      kind: "do_not_follow_up_yet" as const,
+      reason: "message delivered but not read",
+      trigger: "re-check after the configured delay",
+    },
+  };
+
+  beforeEach(() => {
+    followUpCreate.mockReset().mockResolvedValue({ id: "fu_new" });
+    campaignFindUniqueOrThrow.mockReset().mockResolvedValue({
+      id: "camp_1",
+      senderPhoneNumberId: "999888777",
+      followUpDelayMinutes: 60,
+    });
+    followUpFindUniqueOrThrow.mockReset().mockResolvedValue({
+      id: "fu_new",
+      conversationId: "conv_1",
+      leadId: "lead_1",
+      status: "PENDING",
+      scheduledFor: new Date(Date.now() + 60 * 60_000),
+      createdAt: new Date(),
+    });
+    followUpUpdate.mockReset().mockResolvedValue({});
+  });
+
+  it("does nothing when the decision does not explicitly require a follow-up", async () => {
+    const result = await maybeScheduleFollowUp({
+      conversationId: "conv_1",
+      leadId: "lead_1",
+      campaignId: "camp_1",
+      decision: { ...followUpDecision, recommendedReply: { kind: "reply", text: "hi" } },
+    });
+
+    expect(result).toEqual({
+      scheduled: false,
+      reason: "decision does not explicitly require a follow-up",
+    });
+    expect(followUpCreate).not.toHaveBeenCalled();
+  });
+
+  it("does not schedule when there is no campaign — no interval source", async () => {
+    const result = await maybeScheduleFollowUp({
+      conversationId: "conv_1",
+      leadId: "lead_1",
+      campaignId: null,
+      decision: followUpDecision,
+    });
+
+    expect(result).toEqual({
+      scheduled: false,
+      reason: "conversation has no campaign to source a follow-up interval from",
+    });
+    expect(followUpCreate).not.toHaveBeenCalled();
+  });
+
+  it("does not schedule when the campaign has no followUpDelayMinutes configured", async () => {
+    campaignFindUniqueOrThrow.mockResolvedValue({
+      id: "camp_1",
+      senderPhoneNumberId: "999888777",
+      followUpDelayMinutes: null,
+    });
+
+    const result = await maybeScheduleFollowUp({
+      conversationId: "conv_1",
+      leadId: "lead_1",
+      campaignId: "camp_1",
+      decision: followUpDecision,
+    });
+
+    expect(result).toEqual({
+      scheduled: false,
+      reason: "campaign.followUpDelayMinutes is not configured",
+    });
+    expect(followUpCreate).not.toHaveBeenCalled();
+  });
+
+  it("does not schedule when followUpDelayMinutes is not positive", async () => {
+    campaignFindUniqueOrThrow.mockResolvedValue({
+      id: "camp_1",
+      senderPhoneNumberId: "999888777",
+      followUpDelayMinutes: 0,
+    });
+
+    const result = await maybeScheduleFollowUp({
+      conversationId: "conv_1",
+      leadId: "lead_1",
+      campaignId: "camp_1",
+      decision: followUpDecision,
+    });
+
+    expect(result).toEqual({
+      scheduled: false,
+      reason: "campaign.followUpDelayMinutes must be positive",
+    });
+    expect(followUpCreate).not.toHaveBeenCalled();
+  });
+
+  it("creates a FollowUp scheduledFor now + followUpDelayMinutes, schedules it, and returns its id", async () => {
+    const triggerSpy = vi
+      .spyOn(scheduleFollowUpTask, "trigger")
+      .mockResolvedValue({ id: "run_new" } as never);
+    const before = Date.now();
+
+    const result = await maybeScheduleFollowUp({
+      conversationId: "conv_1",
+      leadId: "lead_1",
+      campaignId: "camp_1",
+      decision: followUpDecision,
+      triggerAiDecisionId: "decision_9",
+    });
+
+    expect(result.scheduled).toBe(true);
+    if (result.scheduled) {
+      expect(result.followUpId).toBe("fu_new");
+      const deltaMs = result.scheduledFor.getTime() - before;
+      expect(deltaMs).toBeGreaterThan(59 * 60_000);
+      expect(deltaMs).toBeLessThan(61 * 60_000);
+    }
+
+    const [createArgs] = followUpCreate.mock.calls[0];
+    expect(createArgs.data).toMatchObject({
+      conversationId: "conv_1",
+      leadId: "lead_1",
+      reason: "message delivered but not read",
+      triggerAiDecisionId: "decision_9",
+    });
+
+    // scheduleFollowUp() was called internally, connecting the new row to Trigger.dev.
+    expect(triggerSpy).toHaveBeenCalledWith(
+      { conversationId: "conv_1", leadId: "lead_1", followUpId: "fu_new" },
+      expect.objectContaining({ concurrencyKey: "conv_1" }),
+    );
+    expect(followUpUpdate).toHaveBeenCalledWith({
+      where: { id: "fu_new" },
+      data: { triggerRunId: "run_new" },
+    });
 
     triggerSpy.mockRestore();
   });

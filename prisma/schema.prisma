@@ -66,6 +66,9 @@ model Campaign {
   templateStatus       TemplateStatus @default(PENDING)
   dailyBudgetPerNumber Int
   senderPhoneNumberId  String
+  /// Configurable follow-up delay in minutes. Null means no follow-up can be
+  /// scheduled for this campaign — never defaulted to a guessed interval.
+  followUpDelayMinutes Int?
   createdAt            DateTime       @default(now())
   updatedAt            DateTime       @updatedAt
 
@@ -98,6 +101,13 @@ model Conversation {
   salesStage    String?
   lastInboundAt DateTime?
   lastOutboundAt DateTime?
+  /// The Meta WhatsApp Business phone_number_id that received this
+  /// conversation's inbound messages (webhook's metadata.phone_number_id).
+  /// Populated on every inbound webhook so an organically-initiated
+  /// conversation (no Campaign) still has a safe, correct sender number to
+  /// reply from — Campaign.senderPhoneNumberId is the only other source of
+  /// that, and organic conversations have no Campaign.
+  senderPhoneNumberId String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 

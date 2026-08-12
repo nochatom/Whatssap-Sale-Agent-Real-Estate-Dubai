@@ -6,7 +6,13 @@ import { sendMessage, sendTemplateMessage } from "@/whatsapp/transport";
 
 export interface SendOutboundPayload {
   conversationId: string;
-  campaignId: string;
+  /**
+   * Absent for an organically initiated conversation (no Campaign) — the
+   * caller resolves senderPhoneNumberId from Conversation.senderPhoneNumberId
+   * instead in that case. A template send always requires a campaignId; this
+   * throws if isTemplate is true and campaignId is missing.
+   */
+  campaignId?: string;
   leadId: string;
   senderPhoneNumberId: string;
   idempotencyKey: string;
@@ -47,10 +53,15 @@ export async function sendOutbound(payload: SendOutboundPayload): Promise<SendOu
   if (!isTemplate && !payload.body) {
     throw new Error("sendOutbound: body is required for a non-template send");
   }
+  if (isTemplate && !payload.campaignId) {
+    throw new Error("sendOutbound: a template send requires campaignId — there is no organic template");
+  }
 
   const [lead, campaign, conversation] = await Promise.all([
     prisma.lead.findUniqueOrThrow({ where: { id: payload.leadId } }),
-    prisma.campaign.findUniqueOrThrow({ where: { id: payload.campaignId } }),
+    payload.campaignId
+      ? prisma.campaign.findUniqueOrThrow({ where: { id: payload.campaignId } })
+      : Promise.resolve(null),
     prisma.conversation.findUniqueOrThrow({ where: { id: payload.conversationId } }),
   ]);
 
@@ -79,8 +90,14 @@ export async function sendOutbound(payload: SendOutboundPayload): Promise<SendOu
   let sendResult: { waMessageId: string };
   let persistedBody: string | null;
   let persistedType: string;
+  let persistedTemplateName: string | null;
 
   if (isTemplate) {
+    // Guaranteed non-null: validated above (isTemplate implies campaignId
+    // was required), this is just TS not narrowing across the Promise.all.
+    if (!campaign) {
+      throw new Error("sendOutbound: template send but no campaign was resolved");
+    }
     const templateLanguage = process.env.WHATSAPP_TEMPLATE_LANGUAGE;
     if (!templateLanguage) {
       throw new Error(
@@ -96,6 +113,7 @@ export async function sendOutbound(payload: SendOutboundPayload): Promise<SendOu
     });
     persistedBody = null;
     persistedType = "template";
+    persistedTemplateName = campaign.templateName;
   } else {
     sendResult = await sendMessage({
       to: lead.phoneE164,
@@ -105,6 +123,7 @@ export async function sendOutbound(payload: SendOutboundPayload): Promise<SendOu
     });
     persistedBody = payload.body as string;
     persistedType = "text";
+    persistedTemplateName = null;
   }
 
   const message = await prisma.message.create({
@@ -115,7 +134,7 @@ export async function sendOutbound(payload: SendOutboundPayload): Promise<SendOu
       idempotencyKey: payload.idempotencyKey,
       type: persistedType,
       body: persistedBody,
-      templateName: isTemplate ? campaign.templateName : null,
+      templateName: persistedTemplateName,
       status: "SENT",
     },
   });

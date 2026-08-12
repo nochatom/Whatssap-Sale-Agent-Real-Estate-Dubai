@@ -6,7 +6,12 @@ interface WhatsAppWebhookMessage {
   text?: { body: string };
 }
 
+interface WhatsAppWebhookMetadata {
+  phone_number_id?: string;
+}
+
 interface WhatsAppWebhookValue {
+  metadata?: WhatsAppWebhookMetadata;
   messages?: WhatsAppWebhookMessage[];
 }
 
@@ -29,6 +34,14 @@ export interface ParsedInboundMessage {
   timestamp: string;
   type: string;
   text?: string;
+  /**
+   * The receiving WhatsApp Business phone_number_id from the webhook's
+   * metadata block — which of the business's numbers this message arrived
+   * on. Used to populate Conversation.senderPhoneNumberId so a reply can be
+   * sent from the correct number even when there's no Campaign to source it
+   * from (organic inbound).
+   */
+  receivingPhoneNumberId?: string;
 }
 
 /**
@@ -38,7 +51,8 @@ export interface ParsedInboundMessage {
  * malformed or partial body).
  */
 export function extractInboundMessage(payload: WhatsAppWebhookPayload): ParsedInboundMessage | null {
-  const message = payload.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
+  const value = payload.entry?.[0]?.changes?.[0]?.value;
+  const message = value?.messages?.[0];
   if (!message) return null;
 
   return {
@@ -47,5 +61,6 @@ export function extractInboundMessage(payload: WhatsAppWebhookPayload): ParsedIn
     timestamp: message.timestamp,
     type: message.type,
     text: message.type === "text" ? message.text?.body : undefined,
+    receivingPhoneNumberId: value?.metadata?.phone_number_id,
   };
 }

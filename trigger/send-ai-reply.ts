@@ -6,6 +6,7 @@ import { invokeSkill } from "@/skill/invoke";
 import type { SkillInputMessage, SkillInvocationContext } from "@/skill/types";
 import { classifyBehaviorState } from "@/whatsapp/behavior-state";
 import { buildReplyIdempotencyKey } from "@/whatsapp/idempotency";
+import { maybeScheduleFollowUp } from "@trigger/schedule-followup";
 import { sendOutboundTask } from "@trigger/send-outbound";
 
 export interface SendAiReplyPayload {
@@ -21,6 +22,7 @@ export type SendAiReplyResult =
       status: "success" | "parse_failure";
       replyTriggered: boolean;
       replySkipped?: string;
+      followUpScheduled?: boolean;
     };
 
 /**
@@ -90,7 +92,7 @@ export async function sendAiReply(payload: SendAiReplyPayload): Promise<SendAiRe
 
   const result = await invokeSkill(context);
 
-  await prisma.aiDecision.create({
+  const aiDecision = await prisma.aiDecision.create({
     data: {
       conversationId: conversation.id,
       messageId: payload.triggeringMessageId,
@@ -110,34 +112,58 @@ export async function sendAiReply(payload: SendAiReplyPayload): Promise<SendAiRe
     return { evaluated: true, status: result.status, replyTriggered: false };
   }
 
-  if (result.decision.recommendedReply.kind !== "reply") {
-    return { evaluated: true, status: result.status, replyTriggered: false };
-  }
-
-  if (!conversation.campaignId) {
-    logger.log("send-ai-reply: Skill returned a reply but conversation has no campaign, not sending", {
+  if (result.decision.recommendedReply.kind === "do_not_follow_up_yet") {
+    const followUp = await maybeScheduleFollowUp({
       conversationId: conversation.id,
+      leadId: conversation.leadId,
+      campaignId: conversation.campaignId,
+      decision: result.decision,
+      triggerAiDecisionId: aiDecision.id,
     });
     return {
       evaluated: true,
       status: result.status,
       replyTriggered: false,
-      replySkipped: "conversation has no associated campaign",
+      followUpScheduled: followUp.scheduled,
     };
   }
 
-  const campaign = await prisma.campaign.findUniqueOrThrow({ where: { id: conversation.campaignId } });
+  if (result.decision.recommendedReply.kind !== "reply") {
+    return { evaluated: true, status: result.status, replyTriggered: false };
+  }
+
+  let campaignId: string | undefined;
+  let senderPhoneNumberId: string;
+
+  if (conversation.campaignId) {
+    const campaign = await prisma.campaign.findUniqueOrThrow({ where: { id: conversation.campaignId } });
+    campaignId = campaign.id;
+    senderPhoneNumberId = campaign.senderPhoneNumberId;
+  } else if (conversation.senderPhoneNumberId) {
+    senderPhoneNumberId = conversation.senderPhoneNumberId;
+  } else {
+    logger.log(
+      "send-ai-reply: Skill returned a reply but there is no campaign and no known sender number, not sending",
+      { conversationId: conversation.id },
+    );
+    return {
+      evaluated: true,
+      status: result.status,
+      replyTriggered: false,
+      replySkipped: "no campaign and no known sender number for this conversation",
+    };
+  }
 
   await sendOutboundTask.trigger(
     {
       conversationId: conversation.id,
-      campaignId: campaign.id,
+      campaignId,
       leadId: conversation.leadId,
-      senderPhoneNumberId: campaign.senderPhoneNumberId,
+      senderPhoneNumberId,
       idempotencyKey: buildReplyIdempotencyKey(conversation.id, payload.triggeringWaMessageId),
       body: result.decision.recommendedReply.text,
     },
-    { concurrencyKey: campaign.senderPhoneNumberId },
+    { concurrencyKey: senderPhoneNumberId },
   );
 
   return { evaluated: true, status: result.status, replyTriggered: true };

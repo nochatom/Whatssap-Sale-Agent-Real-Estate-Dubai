@@ -234,5 +234,102 @@ describe("sendOutbound", () => {
       await expect(sendOutbound(TEMPLATE_PAYLOAD)).rejects.toThrow(/WHATSAPP_TEMPLATE_LANGUAGE/);
       expect(sendTemplateMessageMock).not.toHaveBeenCalled();
     });
+
+    it("throws and never touches the database when isTemplate is true but campaignId is missing", async () => {
+      await expect(
+        sendOutbound({ ...TEMPLATE_PAYLOAD, campaignId: undefined }),
+      ).rejects.toThrow(/no organic template/);
+      expect(leadFindUniqueOrThrow).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("organic sends (no campaignId)", () => {
+    const ORGANIC_PAYLOAD = {
+      conversationId: "conv_organic",
+      leadId: "lead_1",
+      senderPhoneNumberId: "999888777",
+      idempotencyKey: "out:reply:conv_organic:wamid.9",
+      body: "Sure, happy to help — what platform is this for?",
+    };
+
+    beforeEach(() => {
+      conversationFindUniqueOrThrow.mockResolvedValue({
+        id: "conv_organic",
+        lastInboundAt: new Date(),
+      });
+    });
+
+    it("never looks up a campaign when campaignId is absent", async () => {
+      sendMessageMock.mockResolvedValue({ waMessageId: "wamid.ORG1" });
+
+      await sendOutbound(ORGANIC_PAYLOAD);
+
+      expect(campaignFindUniqueOrThrow).not.toHaveBeenCalled();
+    });
+
+    it("sends and persists a Message with no campaign, once every other gate passes", async () => {
+      sendMessageMock.mockResolvedValue({ waMessageId: "wamid.ORG1" });
+
+      const result = await sendOutbound(ORGANIC_PAYLOAD);
+
+      expect(result).toEqual({ sent: true, waMessageId: "wamid.ORG1", messageId: "msg_out_1" });
+      expect(sendMessageMock).toHaveBeenCalledWith({
+        to: "+15551234567",
+        body: ORGANIC_PAYLOAD.body,
+        phoneNumberId: "999888777",
+        accessToken: "test-token",
+      });
+    });
+
+    it("still blocks on suppression for an organic send — unweakened", async () => {
+      suppressionListFindUnique.mockResolvedValue({ id: "sup_1", phoneE164: "+15551234567" });
+
+      const result = await sendOutbound(ORGANIC_PAYLOAD);
+
+      expect(result).toEqual({ sent: false, blockedBy: "suppression" });
+      expect(sendMessageMock).not.toHaveBeenCalled();
+    });
+
+    it("still blocks on opt-out for an organic send — unweakened", async () => {
+      leadFindUniqueOrThrow.mockResolvedValue({
+        id: "lead_1",
+        phoneE164: "+15551234567",
+        optedIn: false,
+      });
+
+      const result = await sendOutbound(ORGANIC_PAYLOAD);
+
+      expect(result).toEqual({ sent: false, blockedBy: "opt_out" });
+      expect(sendMessageMock).not.toHaveBeenCalled();
+    });
+
+    it("still requires an open 24h service window for an organic send — unweakened", async () => {
+      conversationFindUniqueOrThrow.mockResolvedValue({ id: "conv_organic", lastInboundAt: null });
+
+      const result = await sendOutbound(ORGANIC_PAYLOAD);
+
+      expect(result).toEqual({ sent: false, blockedBy: "service_window_closed" });
+      expect(sendMessageMock).not.toHaveBeenCalled();
+    });
+
+    it("still blocks on idempotency conflict for an organic send — unweakened", async () => {
+      messageFindUnique.mockResolvedValue({ id: "existing" });
+
+      const result = await sendOutbound(ORGANIC_PAYLOAD);
+
+      expect(result).toEqual({ sent: false, blockedBy: "idempotency_conflict" });
+      expect(sendMessageMock).not.toHaveBeenCalled();
+    });
+
+    it("is not gated by daily budget — there is no campaign to source a limit from", async () => {
+      // messageCount deliberately left high; with no campaign there is no
+      // dailyBudgetPerNumber to compare it against, so this must not block.
+      messageCount.mockResolvedValue(99999);
+      sendMessageMock.mockResolvedValue({ waMessageId: "wamid.ORG2" });
+
+      const result = await sendOutbound(ORGANIC_PAYLOAD);
+
+      expect(result.sent).toBe(true);
+    });
   });
 });

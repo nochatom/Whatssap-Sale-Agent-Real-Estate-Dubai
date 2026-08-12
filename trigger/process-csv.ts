@@ -15,19 +15,37 @@ export interface ProcessCsvResult extends CsvImportReport {
 }
 
 /**
- * Fetches the CSV from csvFileUrl and delegates parsing/normalizing/dedupe/
- * write entirely to importLeadsFromCsv — no import logic duplicated here.
- *
- * When campaignId is provided, this creates a Conversation linking each
- * newly-created Lead to that campaign (Conversation is the Lead<->Campaign
- * join, per the existing schema decision — Lead itself has no campaignId
- * column). This is what makes a campaign's leads discoverable by
+ * Creates a Conversation linking each newly-created Lead in a report to a
+ * campaign (Conversation is the Lead<->Campaign join — Lead itself has no
+ * campaignId column). This is what makes a campaign's leads discoverable by
  * start-campaign afterwards. Only rows with status "created" get a
  * Conversation — a row that matched an existing Lead (duplicate_existing) is
  * NOT auto-enrolled into this campaign, since a lead can already have a
  * Conversation from a different campaign and silently creating a second one
  * would make "which conversation is live" ambiguous. That's a deliberate
  * scope boundary, not an oversight.
+ *
+ * Extracted so both the Trigger.dev task (URL-based CSV) and the /leads
+ * upload UI (in-memory CSV) share the exact same linking behavior.
+ */
+export async function linkNewLeadsToCampaign(
+  report: CsvImportReport,
+  campaignId: string,
+): Promise<number> {
+  const createdLeadIds = report.results
+    .filter((r) => r.status === "created" && r.leadId)
+    .map((r) => r.leadId as string);
+
+  for (const leadId of createdLeadIds) {
+    await prisma.conversation.create({ data: { leadId, campaignId } });
+  }
+
+  return createdLeadIds.length;
+}
+
+/**
+ * Fetches the CSV from csvFileUrl and delegates parsing/normalizing/dedupe/
+ * write entirely to importLeadsFromCsv — no import logic duplicated here.
  */
 export async function processCsv(payload: ProcessCsvPayload): Promise<ProcessCsvResult> {
   const response = await fetch(payload.csvFileUrl);
@@ -40,18 +58,9 @@ export async function processCsv(payload: ProcessCsvPayload): Promise<ProcessCsv
     defaultCountry: payload.defaultCountry as CountryCode | undefined,
   });
 
-  let conversationsCreated = 0;
-  if (payload.campaignId) {
-    const campaignId = payload.campaignId;
-    const createdLeadIds = report.results
-      .filter((r) => r.status === "created" && r.leadId)
-      .map((r) => r.leadId as string);
-
-    for (const leadId of createdLeadIds) {
-      await prisma.conversation.create({ data: { leadId, campaignId } });
-      conversationsCreated++;
-    }
-  }
+  const conversationsCreated = payload.campaignId
+    ? await linkNewLeadsToCampaign(report, payload.campaignId)
+    : 0;
 
   logger.log("process-csv: import complete", {
     totalRows: report.totalRows,

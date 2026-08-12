@@ -58,7 +58,9 @@ export async function POST(request: NextRequest) {
     orderBy: { createdAt: "desc" },
   });
   if (!conversation) {
-    conversation = await prisma.conversation.create({ data: { leadId: lead.id } });
+    conversation = await prisma.conversation.create({
+      data: { leadId: lead.id, senderPhoneNumberId: inbound.receivingPhoneNumberId },
+    });
   }
 
   const idempotencyKey = buildInboundIdempotencyKey(inbound.waMessageId);
@@ -78,7 +80,10 @@ export async function POST(request: NextRequest) {
 
   await prisma.conversation.update({
     where: { id: conversation.id },
-    data: { lastInboundAt: new Date() },
+    // senderPhoneNumberId: undefined leaves an existing value untouched if
+    // this particular webhook payload happens to omit metadata — it's only
+    // ever set, never cleared, by an inbound message.
+    data: { lastInboundAt: new Date(), senderPhoneNumberId: inbound.receivingPhoneNumberId },
   });
 
   await handleInboundTask.trigger(

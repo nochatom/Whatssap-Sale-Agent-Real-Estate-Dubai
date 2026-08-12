@@ -25,7 +25,15 @@ export function checkOptOutFlag(lead: Pick<Lead, "optedIn">): boolean {
   return lead.optedIn === true;
 }
 
-export function checkCampaignActive(campaign: Pick<Campaign, "status">): boolean {
+/**
+ * No campaign means there is nothing to be "inactive" — an organically
+ * initiated conversation was never gated by a campaign's status in the first
+ * place. Not a weakening: this check's precondition (a campaign exists)
+ * simply doesn't hold, the same pattern checkTemplateApproval and
+ * checkServiceWindow already use for their own not-applicable cases.
+ */
+export function checkCampaignActive(campaign: Pick<Campaign, "status"> | null): boolean {
+  if (!campaign) return true;
   return campaign.status === "ACTIVE";
 }
 
@@ -35,10 +43,19 @@ export function checkCampaignActive(campaign: Pick<Campaign, "status">): boolean
  * the send-outbound Trigger.dev task runs with concurrencyKey: senderPhoneNumberId
  * and queue.concurrencyLimit: 1, which serializes this read-then-send per
  * sender number. See trigger/send-outbound.ts.
+ *
+ * No campaign means no configured dailyBudgetPerNumber exists to check
+ * against — there is nowhere else in the system a budget limit for an
+ * organic (no-campaign) conversation could come from, and inventing one
+ * would be the same mistake as inventing a price or a follow-up interval.
+ * This is a deliberate, reported decision (see the Phase 2 report), not a
+ * silent skip.
  */
 export async function checkDailyBudget(
-  campaign: Pick<Campaign, "id" | "dailyBudgetPerNumber">,
+  campaign: Pick<Campaign, "id" | "dailyBudgetPerNumber"> | null,
 ): Promise<boolean> {
+  if (!campaign) return true;
+
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
 
@@ -74,29 +91,40 @@ export function checkServiceWindow(
 }
 
 /**
- * A template send is only legal against a Meta-approved template. Free-text
- * sends aren't gated by this — they're gated by checkServiceWindow instead.
+ * A template send is only legal against a Meta-approved template, and a
+ * template always belongs to a campaign — there is no such thing as an
+ * organic template send. isTemplate: true with no campaign fails closed
+ * (false), it does not skip. Free-text sends aren't gated by this at all —
+ * they're gated by checkServiceWindow instead.
  */
 export function checkTemplateApproval(
-  campaign: Pick<Campaign, "templateStatus">,
+  campaign: Pick<Campaign, "templateStatus"> | null,
   isTemplate: boolean,
 ): boolean {
   if (!isTemplate) return true;
+  if (!campaign) return false;
   return campaign.templateStatus === "APPROVED";
 }
 
 export interface RunComplianceGateParams {
   phoneE164: string;
   lead: Pick<Lead, "optedIn">;
-  campaign: Pick<Campaign, "id" | "status" | "dailyBudgetPerNumber" | "templateStatus">;
+  /**
+   * Null for an organically initiated conversation (no Campaign). Suppression,
+   * opt-out, idempotency, and the 24h service window are unaffected — they
+   * never depended on a campaign. Only checkCampaignActive/checkDailyBudget
+   * (nothing to check) and checkTemplateApproval (fails closed) change
+   * behavior, per their own docs above.
+   */
+  campaign: Pick<Campaign, "id" | "status" | "dailyBudgetPerNumber" | "templateStatus"> | null;
   conversation: Pick<Conversation, "lastInboundAt">;
   idempotencyKey: string;
   isTemplate: boolean;
 }
 
 /**
- * Aggregates all five compliance gates. Built in Phase 1; nothing calls it
- * yet, since no send path exists until Phase 2.
+ * Aggregates all compliance gates. The single centralized call site is
+ * send-outbound.ts, immediately before every send.
  */
 export async function runComplianceGate(
   params: RunComplianceGateParams,

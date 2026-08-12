@@ -138,6 +138,40 @@ describe("POST /api/webhooks/whatsapp", () => {
     expect(triggerOptions).toEqual({ concurrencyKey: "conv_1" });
   });
 
+  it("populates senderPhoneNumberId from the webhook metadata when creating a new conversation", async () => {
+    const body = JSON.stringify(samplePayload());
+    const request = new NextRequest("https://example.com/api/webhooks/whatsapp", {
+      method: "POST",
+      headers: { "x-hub-signature-256": signBody(body), "content-type": "application/json" },
+      body,
+    });
+
+    await POST(request);
+
+    expect(conversationCreate).toHaveBeenCalledWith({
+      data: { leadId: "lead_1", senderPhoneNumberId: "999888777" },
+    });
+  });
+
+  it("also sets senderPhoneNumberId on the update call when reusing an existing conversation", async () => {
+    conversationFindFirst.mockResolvedValue({ id: "conv_existing", leadId: "lead_1" });
+
+    const body = JSON.stringify(samplePayload());
+    const request = new NextRequest("https://example.com/api/webhooks/whatsapp", {
+      method: "POST",
+      headers: { "x-hub-signature-256": signBody(body), "content-type": "application/json" },
+      body,
+    });
+
+    await POST(request);
+
+    expect(conversationCreate).not.toHaveBeenCalled();
+    expect(conversationUpdate).toHaveBeenCalledWith({
+      where: { id: "conv_existing" },
+      data: { lastInboundAt: expect.any(Date), senderPhoneNumberId: "999888777" },
+    });
+  });
+
   it("returns 200 without persisting anything for a non-message webhook change", async () => {
     const statusPayload = {
       object: "whatsapp_business_account",

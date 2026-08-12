@@ -29,6 +29,11 @@ vi.mock("@trigger/send-outbound", () => ({
   sendOutboundTask: { trigger: (...args: unknown[]) => sendOutboundTrigger(...args) },
 }));
 
+const maybeScheduleFollowUpMock = vi.fn();
+vi.mock("@trigger/schedule-followup", () => ({
+  maybeScheduleFollowUp: (...args: unknown[]) => maybeScheduleFollowUpMock(...args),
+}));
+
 const { sendAiReply } = await import("@trigger/send-ai-reply");
 
 const PAYLOAD = {
@@ -76,6 +81,7 @@ describe("sendAiReply", () => {
     });
     invokeSkillMock.mockReset();
     sendOutboundTrigger.mockReset().mockResolvedValue({ id: "run_x" });
+    maybeScheduleFollowUpMock.mockReset().mockResolvedValue({ scheduled: false, reason: "n/a" });
   });
 
   it("aborts without invoking the Skill when a newer inbound message has arrived", async () => {
@@ -162,11 +168,12 @@ describe("sendAiReply", () => {
     expect(sendOutboundTrigger).not.toHaveBeenCalled();
   });
 
-  it("does not trigger send-outbound when the conversation has no campaign", async () => {
+  it("does not trigger send-outbound when there is no campaign and no known sender number", async () => {
     conversationFindUniqueOrThrow.mockResolvedValue({
       id: "conv_1",
       leadId: "lead_1",
       campaignId: null,
+      senderPhoneNumberId: null,
       lead: { id: "lead_1", phoneE164: "+15551234567" },
     });
     invokeSkillMock.mockResolvedValue({
@@ -184,7 +191,81 @@ describe("sendAiReply", () => {
       evaluated: true,
       status: "success",
       replyTriggered: false,
-      replySkipped: "conversation has no associated campaign",
+      replySkipped: "no campaign and no known sender number for this conversation",
+    });
+    expect(sendOutboundTrigger).not.toHaveBeenCalled();
+  });
+
+  it("sends organically, using conversation.senderPhoneNumberId, when there is no campaign", async () => {
+    conversationFindUniqueOrThrow.mockResolvedValue({
+      id: "conv_1",
+      leadId: "lead_1",
+      campaignId: null,
+      senderPhoneNumberId: "999888777",
+      lead: { id: "lead_1", phoneE164: "+15551234567" },
+    });
+    invokeSkillMock.mockResolvedValue({
+      status: "success",
+      rawOutput: "...",
+      decision: {
+        ...BASE_DECISION_FIELDS,
+        recommendedReply: { kind: "reply" as const, text: "Sure, what platform is this for?" },
+      },
+    });
+
+    const result = await sendAiReply(PAYLOAD);
+
+    expect(result).toEqual({ evaluated: true, status: "success", replyTriggered: true });
+    expect(campaignFindUniqueOrThrow).not.toHaveBeenCalled();
+    expect(sendOutboundTrigger).toHaveBeenCalledWith(
+      {
+        conversationId: "conv_1",
+        campaignId: undefined,
+        leadId: "lead_1",
+        senderPhoneNumberId: "999888777",
+        idempotencyKey: "out:reply:conv_1:wamid.2",
+        body: "Sure, what platform is this for?",
+      },
+      { concurrencyKey: "999888777" },
+    );
+  });
+
+  it("calls maybeScheduleFollowUp when the decision explicitly requires a follow-up", async () => {
+    aiDecisionCreate.mockResolvedValue({ id: "decision_42" });
+    invokeSkillMock.mockResolvedValue({
+      status: "success",
+      rawOutput: "...",
+      decision: {
+        ...BASE_DECISION_FIELDS,
+        recommendedReply: {
+          kind: "do_not_follow_up_yet" as const,
+          reason: "message unopened",
+          trigger: "wait and check back",
+        },
+      },
+    });
+    maybeScheduleFollowUpMock.mockResolvedValue({
+      scheduled: true,
+      followUpId: "fu_1",
+      scheduledFor: new Date(),
+    });
+
+    const result = await sendAiReply(PAYLOAD);
+
+    expect(result).toEqual({
+      evaluated: true,
+      status: "success",
+      replyTriggered: false,
+      followUpScheduled: true,
+    });
+    expect(maybeScheduleFollowUpMock).toHaveBeenCalledWith({
+      conversationId: "conv_1",
+      leadId: "lead_1",
+      campaignId: "camp_1",
+      decision: expect.objectContaining({
+        recommendedReply: expect.objectContaining({ kind: "do_not_follow_up_yet" }),
+      }),
+      triggerAiDecisionId: "decision_42",
     });
     expect(sendOutboundTrigger).not.toHaveBeenCalled();
   });

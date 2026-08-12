@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { invokeSkill } from "@/skill/invoke";
-import type { SkillInputMessage, SkillInvocationContext } from "@/skill/types";
+import type { SkillDecision, SkillInputMessage, SkillInvocationContext } from "@/skill/types";
 import { buildFollowUpIdempotencyKey } from "@/whatsapp/idempotency";
 import { sendOutboundTask } from "@trigger/send-outbound";
 
@@ -58,6 +58,92 @@ export async function scheduleFollowUp(followUpId: string): Promise<{ triggerRun
   });
 
   return { triggerRunId: handle.id };
+}
+
+export interface MaybeScheduleFollowUpParams {
+  conversationId: string;
+  leadId: string;
+  /** Null for an organic conversation — there is then no campaign to source a follow-up interval from. */
+  campaignId: string | null;
+  decision: SkillDecision;
+  /** Links the new FollowUp back to the AiDecision that produced this "wait" — FollowUp.triggerAiDecisionId. */
+  triggerAiDecisionId?: string;
+}
+
+export type MaybeScheduleFollowUpResult =
+  | { scheduled: false; reason: string }
+  | { scheduled: true; followUpId: string; scheduledFor: Date };
+
+/**
+ * Creates and schedules a FollowUp when — and only when — the Skill's
+ * decision explicitly asks for one: recommendedReply.kind ===
+ * "do_not_follow_up_yet" (SKILL.md §9/§17). This is deliberately distinct
+ * from "do_not_reply_yet", which is a passive wait (e.g. "just sent, too
+ * soon") with no proactive re-engagement implied — only the named
+ * follow-up variant creates a FollowUp row.
+ *
+ * The delay is always Campaign.followUpDelayMinutes — never hardcoded, never
+ * parsed out of the Skill's free-text `trigger` field. No campaign, no
+ * configured delay, or a non-positive delay all mean "cannot safely schedule
+ * this" and are reported back via the result, never silently defaulted to a
+ * guessed number.
+ */
+export async function maybeScheduleFollowUp(
+  params: MaybeScheduleFollowUpParams,
+): Promise<MaybeScheduleFollowUpResult> {
+  if (params.decision.recommendedReply.kind !== "do_not_follow_up_yet") {
+    return { scheduled: false, reason: "decision does not explicitly require a follow-up" };
+  }
+
+  if (!params.campaignId) {
+    logger.log(
+      "maybeScheduleFollowUp: no campaign, no configured follow-up interval, not scheduling",
+      { conversationId: params.conversationId },
+    );
+    return {
+      scheduled: false,
+      reason: "conversation has no campaign to source a follow-up interval from",
+    };
+  }
+
+  const campaign = await prisma.campaign.findUniqueOrThrow({ where: { id: params.campaignId } });
+
+  if (campaign.followUpDelayMinutes == null) {
+    logger.log(
+      "maybeScheduleFollowUp: campaign has no followUpDelayMinutes configured, not scheduling",
+      { campaignId: campaign.id },
+    );
+    return { scheduled: false, reason: "campaign.followUpDelayMinutes is not configured" };
+  }
+
+  if (campaign.followUpDelayMinutes <= 0) {
+    logger.warn(
+      "maybeScheduleFollowUp: campaign.followUpDelayMinutes must be positive, not scheduling",
+      { campaignId: campaign.id, followUpDelayMinutes: campaign.followUpDelayMinutes },
+    );
+    return { scheduled: false, reason: "campaign.followUpDelayMinutes must be positive" };
+  }
+
+  const scheduledFor = new Date(Date.now() + campaign.followUpDelayMinutes * 60_000);
+
+  const followUp = await prisma.followUp.create({
+    data: {
+      conversationId: params.conversationId,
+      leadId: params.leadId,
+      scheduledFor,
+      reason: params.decision.recommendedReply.reason,
+      triggerAiDecisionId: params.triggerAiDecisionId,
+    },
+  });
+
+  await scheduleFollowUp(followUp.id);
+
+  logger.log("maybeScheduleFollowUp: FollowUp created and scheduled", {
+    followUpId: followUp.id,
+    scheduledFor,
+  });
+
+  return { scheduled: true, followUpId: followUp.id, scheduledFor };
 }
 
 /**
@@ -146,31 +232,43 @@ export async function runScheduledFollowUp(
   }
 
   if (result.decision.recommendedReply.kind !== "reply") {
+    // Deliberately NOT calling maybeScheduleFollowUp again here even if the
+    // fresh decision is again "do_not_follow_up_yet" — that would chain
+    // follow-ups indefinitely. One follow-up per "wait" signal from
+    // send-ai-reply is the cap, and nothing is configured to allow more (see
+    // the Phase 2 report). This FollowUp is simply cancelled.
     await prisma.followUp.update({ where: { id: followUp.id }, data: { status: "CANCELLED" } });
-    logger.log("schedule-followup: Skill says wait again, not auto-rescheduling (no interval source)");
+    logger.log("schedule-followup: Skill says wait again, not auto-rescheduling (endless-loop guard)");
     return { actioned: false, reason: "Skill did not return a reply; not auto-rescheduling" };
   }
 
-  if (!conversation.campaignId) {
+  let campaignId: string | undefined;
+  let senderPhoneNumberId: string;
+
+  if (conversation.campaignId) {
+    const campaign = await prisma.campaign.findUniqueOrThrow({ where: { id: conversation.campaignId } });
+    campaignId = campaign.id;
+    senderPhoneNumberId = campaign.senderPhoneNumberId;
+  } else if (conversation.senderPhoneNumberId) {
+    senderPhoneNumberId = conversation.senderPhoneNumberId;
+  } else {
     await prisma.followUp.update({ where: { id: followUp.id }, data: { status: "CANCELLED" } });
-    logger.log("schedule-followup: cannot send, conversation has no associated campaign", {
+    logger.log("schedule-followup: cannot send, no campaign and no known sender number", {
       conversationId: conversation.id,
     });
-    return { actioned: false, reason: "conversation has no associated campaign" };
+    return { actioned: false, reason: "no campaign and no known sender number for this conversation" };
   }
-
-  const campaign = await prisma.campaign.findUniqueOrThrow({ where: { id: conversation.campaignId } });
 
   await sendOutboundTask.trigger(
     {
       conversationId: conversation.id,
-      campaignId: campaign.id,
+      campaignId,
       leadId: payload.leadId,
-      senderPhoneNumberId: campaign.senderPhoneNumberId,
+      senderPhoneNumberId,
       idempotencyKey: buildFollowUpIdempotencyKey(followUp.id),
       body: result.decision.recommendedReply.text,
     },
-    { concurrencyKey: campaign.senderPhoneNumberId },
+    { concurrencyKey: senderPhoneNumberId },
   );
 
   await prisma.followUp.update({ where: { id: followUp.id }, data: { status: "SENT" } });
@@ -183,14 +281,15 @@ export async function runScheduledFollowUp(
 /**
  * Queue: concurrencyLimit 5. Callers MUST trigger with
  * `concurrencyKey: conversationId` to prevent two follow-ups being scheduled
- * concurrently for the same conversation. The creator of a FollowUp row must
- * write the returned trigger handle's `.id` to FollowUp.triggerRunId, so
- * handle-inbound can cancel it via runs.cancel(triggerRunId) if the customer
- * replies before this fires — see handleInbound's cancelPendingFollowUps.
+ * concurrently for the same conversation. FollowUp.triggerRunId is written
+ * by scheduleFollowUp() above, so handle-inbound can cancel it via
+ * runs.cancel(triggerRunId) if the customer replies before this fires — see
+ * handleInbound's cancelPendingFollowUps.
  *
- * Nothing in this codebase creates FollowUp rows or schedules this task yet
- * (see the report on why: no follow-up interval source exists). This task is
- * a complete, tested orchestration primitive ready for that trigger point.
+ * FollowUp rows are created by maybeScheduleFollowUp() (called from
+ * send-ai-reply.ts when the Skill's decision explicitly requires a
+ * follow-up), which also calls scheduleFollowUp() to connect the new row to
+ * this task.
  */
 export const scheduleFollowUpTask = task({
   id: "schedule-followup",

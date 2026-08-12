@@ -11,22 +11,22 @@
     "trigger:dev": "trigger.dev dev"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "0.116.0",
+    "@prisma/client": "6.19.2",
+    "@trigger.dev/sdk": "4.5.10",
+    "csv-parse": "7.0.2",
+    "libphonenumber-js": "1.13.10",
     "next": "15.5.23",
     "react": "19.2.8",
-    "react-dom": "19.2.8",
-    "@prisma/client": "6.19.2",
-    "@anthropic-ai/sdk": "0.116.0",
-    "@trigger.dev/sdk": "4.5.10",
-    "libphonenumber-js": "1.13.10",
-    "csv-parse": "7.0.2"
+    "react-dom": "19.2.8"
   },
   "devDependencies": {
     "@trigger.dev/build": "4.5.10",
-    "typescript": "7.0.2",
     "@types/node": "26.2.0",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
     "prisma": "6.19.2",
+    "typescript": "^6.0.3",
     "vitest": "4.1.10"
   }
 }
