@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 import Badge from "../_components/Badge";
 import WorkflowStepper from "../_components/WorkflowStepper";
@@ -93,7 +94,12 @@ export default function SelectLeadsClient() {
     <main style={{ maxWidth: 960, margin: "0 auto", padding: `${space.lg}px ${space.md}px` }}>
       <WorkflowStepper current="select" />
 
-      <h1 style={{ fontSize: 26, fontWeight: 500, letterSpacing: "0.2px", margin: `0 0 ${space.xxs}px` }}>Select Leads</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: space.sm, marginBottom: space.xxs }}>
+        <h1 style={{ fontSize: 26, fontWeight: 500, letterSpacing: "0.2px", margin: 0 }}>Select Leads</h1>
+        <Link href="/leads/new" style={{ ...buttonStyle("outline", false), display: "inline-flex", alignItems: "center", textDecoration: "none", flexShrink: 0 }}>
+          New Contact
+        </Link>
+      </div>
       <p style={{ color: colors.mutedText, fontSize: 13, margin: `0 0 ${space.md}px` }}>
         Search, filter, and choose which leads the next step will send to.
       </p>

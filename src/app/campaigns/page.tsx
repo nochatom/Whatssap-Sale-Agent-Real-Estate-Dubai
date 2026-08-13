@@ -1,17 +1,17 @@
+import Link from "next/link";
+
 import { prisma } from "@/lib/prisma";
 import Badge from "../_components/Badge";
-import { colors, space, sectionStyle, fieldLabel } from "../_lib/ui-tokens";
+import { colors, space, sectionStyle, fieldLabel, buttonStyle } from "../_lib/ui-tokens";
 
 // Queries the DB on every load — must render per-request, not be statically
 // prerendered at build time, when no DATABASE_URL is available.
 export const dynamic = "force-dynamic";
 
 /**
- * Read-only. Server component querying the existing Campaign model
- * directly — no new business logic, no API route needed for a display-only
- * list. Campaign creation still happens the same way it always has
- * (Prisma Studio / direct insert) — this page doesn't add a create flow,
- * which would be new functionality beyond "provide access to."
+ * Server component querying the existing Campaign model directly. Creation
+ * happens via /campaigns/new + POST /api/campaigns (added alongside this),
+ * not on this page itself — this stays the read-only list + entry point.
  */
 export default async function CampaignsPage() {
   const campaigns = await prisma.campaign.findMany({
@@ -21,12 +21,19 @@ export default async function CampaignsPage() {
 
   return (
     <main style={{ maxWidth: 960, margin: "0 auto", padding: `${space.lg}px ${space.md}px` }}>
-      <h1 style={{ fontSize: 26, fontWeight: 500, margin: `0 0 ${space.sm}px` }}>Campaigns</h1>
-      <p style={{ color: colors.mutedText, fontSize: 13, margin: `0 0 ${space.sm}px` }}>
-        Read-only. Use the Campaign ID shown here on the{" "}
-        <a href="/leads" style={{ color: colors.semanticInfo }}>Leads page</a> to import leads into a campaign or send to a
-        contact.
-      </p>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: space.sm, marginBottom: space.sm }}>
+        <div>
+          <h1 style={{ fontSize: 26, fontWeight: 500, margin: `0 0 8px` }}>Campaigns</h1>
+          <p style={{ color: colors.mutedText, fontSize: 13, margin: 0 }}>
+            Use the Campaign ID shown here on the{" "}
+            <a href="/leads" style={{ color: colors.semanticInfo }}>Leads page</a> to import leads into a campaign or send
+            to a contact.
+          </p>
+        </div>
+        <Link href="/campaigns/new" style={{ ...buttonStyle("hero", false), display: "inline-flex", alignItems: "center", textDecoration: "none", flexShrink: 0 }}>
+          New Campaign
+        </Link>
+      </div>
 
       <section style={sectionStyle}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
