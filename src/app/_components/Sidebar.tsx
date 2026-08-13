@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Users, FileUp, Megaphone, MessagesSquare, Send, MessageCircle, type LucideIcon } from "lucide-react";
+import { LayoutDashboard, Users, FileUp, Megaphone, MessagesSquare, Send, MessageCircle, Bell, type LucideIcon } from "lucide-react";
 
 import { colors, space } from "../_lib/ui-tokens";
 import ThemeToggle from "./ThemeToggle";
@@ -116,7 +116,28 @@ export default function Sidebar() {
         })}
       </nav>
 
-      <div style={{ borderTop: `1px solid ${colors.hairline}`, paddingTop: space.xs, marginTop: space.xs, display: "flex" }}>
+      <div style={{ borderTop: `1px solid ${colors.hairline}`, paddingTop: space.xs, marginTop: space.xs, display: "flex", gap: 8 }}>
+        {/* Plain icon, no unread badge — no read/unread tracking exists in
+            this schema, so a fake dot here would be the same dishonest
+            pattern already removed from the old Topbar reference. Links to
+            the Dashboard, where real activity/follow-ups actually live. */}
+        <Link
+          href="/"
+          aria-label="Notifications — go to Dashboard activity"
+          title="Notifications — go to Dashboard activity"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: 32,
+            height: 32,
+            border: `1px solid ${colors.hairlineStrong}`,
+            borderRadius: 6,
+            color: colors.body,
+          }}
+        >
+          <Bell size={16} />
+        </Link>
         <ThemeToggle />
       </div>
     </aside>

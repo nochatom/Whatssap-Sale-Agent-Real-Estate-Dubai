@@ -32,6 +32,7 @@ export default function SelectLeadsClient() {
   const [query, setQuery] = useState("");
   const [optedInFilter, setOptedInFilter] = useState<OptedInFilter>("all");
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   async function loadLeads() {
     setLoading(true);
@@ -88,6 +89,27 @@ export default function SelectLeadsClient() {
   function goToSend() {
     const ids = Array.from(selected);
     router.push(`/leads/send?leadIds=${ids.map(encodeURIComponent).join(",")}`);
+  }
+
+  async function handleDelete(lead: Lead) {
+    if (!window.confirm(`Delete ${lead.name ?? lead.phoneE164}? This can't be undone.`)) return;
+    setDeletingId(lead.id);
+    setError(null);
+    try {
+      const res = await fetch(`/api/leads?id=${encodeURIComponent(lead.id)}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to delete lead");
+      setLeads((prev) => prev.filter((l) => l.id !== lead.id));
+      setSelected((prev) => {
+        const next = new Set(prev);
+        next.delete(lead.id);
+        return next;
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDeletingId(null);
+    }
   }
 
   return (
@@ -167,6 +189,7 @@ export default function SelectLeadsClient() {
               <th align="left">Phone</th>
               <th align="left">Name</th>
               <th align="left">Opted in</th>
+              <th align="left"></th>
             </tr>
           </thead>
           <tbody>
@@ -188,12 +211,24 @@ export default function SelectLeadsClient() {
                   <td style={{ color: colors.ink }}>{lead.phoneE164}</td>
                   <td style={{ color: colors.body }}>{lead.name ?? "—"}</td>
                   <td>{lead.optedIn ? <Badge tone="ok">yes</Badge> : <Badge tone="neutral">no</Badge>}</td>
+                  <td style={{ textAlign: "right" }}>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDelete(lead);
+                      }}
+                      disabled={deletingId !== null}
+                      style={{ ...buttonStyle("outline", deletingId !== null, true), color: colors.semanticWarning, borderColor: colors.semanticWarning }}
+                    >
+                      {deletingId === lead.id ? "Deleting…" : "Delete"}
+                    </button>
+                  </td>
                 </tr>
               );
             })}
             {!loading && filtered.length === 0 && (
               <tr>
-                <td colSpan={4} style={{ color: colors.mutedText, padding: space.xs }}>
+                <td colSpan={5} style={{ color: colors.mutedText, padding: space.xs }}>
                   {leads.length === 0 ? (
                     <>No leads yet — import some on the Import CSV step.</>
                   ) : (

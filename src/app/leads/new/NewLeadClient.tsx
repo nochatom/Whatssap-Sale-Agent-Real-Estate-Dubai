@@ -81,39 +81,28 @@ export default function NewLeadClient({ campaigns }: { campaigns: { id: string; 
 
       <form onSubmit={handleSubmit}>
         <section style={{ ...sectionStyle, marginBottom: space.md }}>
-          <div style={{ display: "flex", gap: space.sm, marginBottom: space.xs }}>
-            <label style={{ ...fieldLabel, display: "block", flex: 2 }}>
-              Phone *
-              <input value={phone} onChange={(e) => setPhone(e.target.value)} style={{ ...fieldInput, display: "block", marginTop: 4, width: "100%" }} placeholder="e.g. 050 123 4567" />
-            </label>
-            <label style={{ ...fieldLabel, display: "block", flex: 1 }}>
-              Parse as
-              <input value={defaultCountry} onChange={(e) => setDefaultCountry(e.target.value)} style={{ ...fieldInput, display: "block", marginTop: 4, width: "100%" }} />
-            </label>
-          </div>
+          <label style={{ ...fieldLabel, display: "block", marginBottom: space.xs }}>
+            Phone *
+            <input
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              style={{ ...fieldInput, display: "block", marginTop: 4, width: "100%", fontSize: 16 }}
+              placeholder="e.g. 050 123 4567"
+              autoFocus
+            />
+          </label>
 
           <label style={{ ...fieldLabel, display: "block", marginBottom: space.xs }}>
             Name
             <input value={name} onChange={(e) => setName(e.target.value)} style={{ ...fieldInput, display: "block", marginTop: 4, width: "100%" }} />
           </label>
 
-          <div style={{ display: "flex", gap: space.sm, marginBottom: space.xs }}>
-            <label style={{ ...fieldLabel, display: "block", flex: 1 }}>
-              Country
-              <input value={market} onChange={(e) => setMarket(e.target.value)} style={{ ...fieldInput, display: "block", marginTop: 4, width: "100%" }} placeholder="e.g. UAE" />
-            </label>
-            <label style={{ ...fieldLabel, display: "block", flex: 1 }}>
-              Language
-              <input value={language} onChange={(e) => setLanguage(e.target.value)} style={{ ...fieldInput, display: "block", marginTop: 4, width: "100%" }} placeholder="e.g. en" />
-            </label>
-          </div>
-
           <label style={{ ...fieldLabel, display: "flex", alignItems: "center", gap: 8, marginBottom: space.xs }}>
             <input type="checkbox" checked={optedIn} onChange={(e) => setOptedIn(e.target.checked)} />
             Opted in
           </label>
 
-          <label style={{ ...fieldLabel, display: "block" }}>
+          <label style={{ ...fieldLabel, display: "block", marginBottom: space.sm }}>
             Link to campaign (optional)
             <select value={campaignId} onChange={(e) => setCampaignId(e.target.value)} style={{ ...fieldInput, display: "block", marginTop: 4, width: "100%" }}>
               <option value="">— don't link —</option>
@@ -122,6 +111,29 @@ export default function NewLeadClient({ campaigns }: { campaigns: { id: string; 
               ))}
             </select>
           </label>
+
+          <details>
+            <summary style={{ ...fieldLabel, cursor: "pointer", listStyle: "none" }}>Details</summary>
+            <div style={{ display: "flex", gap: space.sm, marginTop: space.xxs }}>
+              <label style={{ ...fieldLabel, display: "block", flex: 1 }}>
+                Country
+                <input value={market} onChange={(e) => setMarket(e.target.value)} style={{ ...fieldInput, display: "block", marginTop: 4, width: "100%" }} placeholder="e.g. UAE" />
+              </label>
+              <label style={{ ...fieldLabel, display: "block", flex: 1 }}>
+                Language
+                <input value={language} onChange={(e) => setLanguage(e.target.value)} style={{ ...fieldInput, display: "block", marginTop: 4, width: "100%" }} placeholder="e.g. en" />
+              </label>
+              <label style={{ ...fieldLabel, display: "block", flex: 1 }}>
+                Parse phone as
+                <select value={defaultCountry} onChange={(e) => setDefaultCountry(e.target.value)} style={{ ...fieldInput, display: "block", marginTop: 4, width: "100%" }}>
+                  <option value="AE">UAE (AE)</option>
+                  <option value="SA">Saudi Arabia (SA)</option>
+                  <option value="EG">Egypt (EG)</option>
+                  <option value="DZ">Algeria (DZ)</option>
+                </select>
+              </label>
+            </div>
+          </details>
         </section>
 
         <button type="submit" disabled={!canSubmit || busy} style={buttonStyle("hero", !canSubmit || busy)}>

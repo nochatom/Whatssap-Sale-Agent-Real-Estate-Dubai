@@ -95,3 +95,37 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({ lead, conversationCreated });
 }
+
+/**
+ * Deletes a single Lead. No cascade — Lead's relations (Conversation, and
+ * transitively Message/AiDecision/FollowUp) have no onDelete configured
+ * in the schema, so a lead with real conversation history fails at the
+ * database (P2003) rather than silently deleting that history. That's
+ * surfaced as a clear error, not worked around — this endpoint only ever
+ * deletes the Lead row itself, nothing else.
+ */
+export async function DELETE(request: NextRequest) {
+  const id = request.nextUrl.searchParams.get("id");
+  if (!id) {
+    return NextResponse.json({ error: "id is required" }, { status: 400 });
+  }
+
+  try {
+    await prisma.lead.delete({ where: { id } });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError) {
+      if (err.code === "P2025") {
+        return NextResponse.json({ error: "Lead not found" }, { status: 404 });
+      }
+      if (err.code === "P2003") {
+        return NextResponse.json(
+          { error: "Can't delete — this lead has conversation history (messages, follow-ups, or AI decisions) linked to it." },
+          { status: 409 },
+        );
+      }
+    }
+    throw err;
+  }
+
+  return NextResponse.json({ deleted: true });
+}
