@@ -2,6 +2,19 @@ import Link from "next/link";
 
 import { prisma } from "@/lib/prisma";
 import { colors, space, sectionStyle, fieldLabel } from "./_lib/ui-tokens";
+import { getRecentActivity } from "./_lib/activity";
+import ActivityFeed from "./_components/ActivityFeed";
+import { getCampaignPerformance } from "./_lib/campaign-performance";
+import CampaignPerformanceTable from "./_components/CampaignPerformanceTable";
+import { getRecentConversations } from "./_lib/recent-conversations";
+import RecentConversations from "./_components/RecentConversations";
+import { getUpcomingFollowUps } from "./_lib/upcoming-followups";
+import UpcomingFollowUps from "./_components/UpcomingFollowUps";
+import { getWeeklySalesActivity } from "./_lib/sales-activity";
+import { getHourlyConversationActivity } from "./_lib/conversation-activity";
+import { SalesChart, ConversationActivityChart } from "./_components/Charts";
+import { getKpis } from "./_lib/kpis";
+import StatCards from "./_components/StatCards";
 
 // Queries the DB on every load (lead/campaign/conversation counts) — must
 // render per-request, not be statically prerendered at build time, when no
@@ -23,10 +36,28 @@ export const dynamic = "force-dynamic";
 export default async function DashboardPage() {
   const sendingEnabled = process.env.SENDING_ENABLED === "true";
 
-  const [leadCount, campaignCount, conversationCount] = await Promise.all([
+  const [
+    leadCount,
+    campaignCount,
+    conversationCount,
+    activity,
+    campaignPerformance,
+    recentConversations,
+    upcomingFollowUps,
+    salesActivity,
+    conversationActivity,
+    kpis,
+  ] = await Promise.all([
     prisma.lead.count(),
     prisma.campaign.count(),
     prisma.conversation.count(),
+    getRecentActivity(),
+    getCampaignPerformance(),
+    getRecentConversations(),
+    getUpcomingFollowUps(),
+    getWeeklySalesActivity(),
+    getHourlyConversationActivity(),
+    getKpis(),
   ]);
 
   return (
@@ -50,6 +81,10 @@ export default async function DashboardPage() {
         {sendingEnabled
           ? "SENDING_ENABLED IS \"TRUE\" ON THIS SERVER — SENDS CAN ATTEMPT A REAL WHATSAPP MESSAGE."
           : "LOCAL / TEST MODE — SENDING_ENABLED IS NOT SET. NO REAL WHATSAPP MESSAGE CAN BE SENT ANYWHERE IN THIS APP."}
+      </div>
+
+      <div style={{ marginBottom: 64 }}>
+        <StatCards kpis={kpis} />
       </div>
 
       <Link href="/leads" style={{ textDecoration: "none", color: "inherit" }}>
@@ -99,6 +134,27 @@ export default async function DashboardPage() {
             <div style={{ fontSize: 24, fontWeight: 700, color: colors.ink }}>{conversationCount}</div>
           </div>
         </Link>
+      </div>
+
+      <div style={{ marginTop: space.sm, display: "grid", gap: space.sm, gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))" }}>
+        <SalesChart data={salesActivity} />
+        <ConversationActivityChart data={conversationActivity} />
+      </div>
+
+      <div style={{ marginTop: space.sm }}>
+        <CampaignPerformanceTable campaigns={campaignPerformance} />
+      </div>
+
+      <div style={{ marginTop: space.sm }}>
+        <RecentConversations conversations={recentConversations} />
+      </div>
+
+      <div style={{ marginTop: space.sm }}>
+        <UpcomingFollowUps followUps={upcomingFollowUps} />
+      </div>
+
+      <div style={{ marginTop: space.sm }}>
+        <ActivityFeed items={activity} />
       </div>
     </main>
   );

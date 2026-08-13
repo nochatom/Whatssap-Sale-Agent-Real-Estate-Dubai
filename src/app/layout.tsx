@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Inter } from "next/font/google";
 
-import Nav from "./_components/Nav";
+import Sidebar from "./_components/Sidebar";
 import { colors } from "./_lib/ui-tokens";
 import "./globals.css";
 
@@ -32,13 +32,15 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body
         style={{
           margin: 0,
+          display: "flex",
+          minHeight: "100vh",
           fontFamily: "var(--font-sans), -apple-system, system-ui, sans-serif",
           backgroundColor: colors.canvas,
           color: colors.ink,
         }}
       >
-        <Nav />
-        {children}
+        <Sidebar />
+        <div style={{ flex: 1, minWidth: 0 }}>{children}</div>
       </body>
     </html>
   );

@@ -5,9 +5,16 @@ export default function Badge({
   tone,
 }: {
   children: React.ReactNode;
-  tone: "ok" | "warn" | "neutral";
+  tone: "ok" | "warn" | "neutral" | "primary";
 }) {
-  const bg = tone === "ok" ? colors.semanticSuccess : tone === "warn" ? colors.semanticWarning : colors.canvas;
+  const bg =
+    tone === "ok"
+      ? colors.semanticSuccess
+      : tone === "warn"
+        ? colors.semanticWarning
+        : tone === "primary"
+          ? colors.primary
+          : colors.canvas;
   return (
     <span
       style={{
