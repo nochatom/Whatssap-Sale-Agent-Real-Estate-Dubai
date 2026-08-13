@@ -10,9 +10,6 @@ import { getRecentConversations } from "./_lib/recent-conversations";
 import RecentConversations from "./_components/RecentConversations";
 import { getUpcomingFollowUps } from "./_lib/upcoming-followups";
 import UpcomingFollowUps from "./_components/UpcomingFollowUps";
-import { getWeeklySalesActivity } from "./_lib/sales-activity";
-import { getHourlyConversationActivity } from "./_lib/conversation-activity";
-import { SalesChart, ConversationActivityChart } from "./_components/Charts";
 import { getKpis } from "./_lib/kpis";
 import StatCards from "./_components/StatCards";
 
@@ -27,36 +24,22 @@ export const dynamic = "force-dynamic";
  * `redirect("/leads")` root page: the root is now the actual dashboard, not
  * a bounce to one section.
  *
- * One hero (Leads/CSV Import/Send — the actual daily workflow) plus a
- * smaller secondary row (Campaigns, Conversations) — not three
- * equal-weight cards. Same dark token system as every other page
+ * KPI strip, one hero (the Import/Select/Send workflow), then real
+ * operational widgets below — no separate Campaigns/Conversations summary
+ * cards (that would just repeat numbers the KPI strip already shows), no
+ * decorative charts. Same dark token system as every other page
  * (colors/space/sectionStyle from ui-tokens.ts); no new colors, gradients,
  * or shadows introduced.
  */
 export default async function DashboardPage() {
   const sendingEnabled = process.env.SENDING_ENABLED === "true";
 
-  const [
-    leadCount,
-    campaignCount,
-    conversationCount,
-    activity,
-    campaignPerformance,
-    recentConversations,
-    upcomingFollowUps,
-    salesActivity,
-    conversationActivity,
-    kpis,
-  ] = await Promise.all([
+  const [leadCount, activity, campaignPerformance, recentConversations, upcomingFollowUps, kpis] = await Promise.all([
     prisma.lead.count(),
-    prisma.campaign.count(),
-    prisma.conversation.count(),
     getRecentActivity(),
     getCampaignPerformance(),
     getRecentConversations(),
     getUpcomingFollowUps(),
-    getWeeklySalesActivity(),
-    getHourlyConversationActivity(),
     getKpis(),
   ]);
 
@@ -87,7 +70,7 @@ export default async function DashboardPage() {
         <StatCards kpis={kpis} />
       </div>
 
-      <Link href="/leads" style={{ textDecoration: "none", color: "inherit" }}>
+      <Link href="/leads/import" style={{ textDecoration: "none", color: "inherit" }}>
         <div
           style={{
             background: colors.canvasElevated,
@@ -104,44 +87,16 @@ export default async function DashboardPage() {
         >
           <div>
             <p style={{ ...fieldLabel, color: colors.primary, margin: `0 0 8px` }}>PRIMARY WORKFLOW</p>
-            <h2 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>Leads · CSV Import · Send</h2>
+            <h2 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>Import → Select → Send</h2>
             <p style={{ color: colors.mutedText, fontSize: 14, margin: "8px 0 0", maxWidth: 480 }}>
-              Upload a CSV, preview and import leads, link them to a campaign, and send the campaign message to a
-              selected contact.
+              Upload and prepare contacts, choose who to reach, then review and send the campaign.
             </p>
           </div>
           <div style={{ fontSize: 64, fontWeight: 700, color: colors.ink, lineHeight: 1 }}>{leadCount}</div>
         </div>
       </Link>
 
-      <div style={{ display: "grid", gap: space.sm, gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
-        <Link href="/campaigns" style={{ textDecoration: "none", color: "inherit" }}>
-          <div style={sectionStyle}>
-            <h3 style={{ fontSize: 15, fontWeight: 600, margin: 0 }}>Campaigns</h3>
-            <p style={{ color: colors.mutedText, fontSize: 13, margin: "4px 0 12px" }}>
-              Status, template approval, sender number, daily budget.
-            </p>
-            <div style={{ fontSize: 24, fontWeight: 700, color: colors.ink }}>{campaignCount}</div>
-          </div>
-        </Link>
-
-        <Link href="/conversations" style={{ textDecoration: "none", color: "inherit" }}>
-          <div style={sectionStyle}>
-            <h3 style={{ fontSize: 15, fontWeight: 600, margin: 0 }}>Conversations</h3>
-            <p style={{ color: colors.mutedText, fontSize: 13, margin: "4px 0 12px" }}>
-              Which campaign (if any) each lead is linked to, and last activity.
-            </p>
-            <div style={{ fontSize: 24, fontWeight: 700, color: colors.ink }}>{conversationCount}</div>
-          </div>
-        </Link>
-      </div>
-
-      <div style={{ marginTop: space.sm, display: "grid", gap: space.sm, gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))" }}>
-        <SalesChart data={salesActivity} />
-        <ConversationActivityChart data={conversationActivity} />
-      </div>
-
-      <div style={{ marginTop: space.sm }}>
+      <div>
         <CampaignPerformanceTable campaigns={campaignPerformance} />
       </div>
 

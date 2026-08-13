@@ -19,8 +19,7 @@
     "lucide-react": "^1.31.0",
     "next": "15.5.23",
     "react": "19.2.8",
-    "react-dom": "19.2.8",
-    "recharts": "^3.10.1"
+    "react-dom": "19.2.8"
   },
   "devDependencies": {
     "@trigger.dev/build": "4.5.10",

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Moon, Sun } from "lucide-react";
 
 import { colors } from "../_lib/ui-tokens";
 
@@ -9,8 +10,9 @@ import { colors } from "../_lib/ui-tokens";
  * plain server component. Reads the theme the anti-flash script (in
  * layout.tsx) already applied to <html data-theme> before paint, so
  * there's no flash/mismatch on mount; this only needs to reflect and
- * toggle it afterward. Positioning (where it sits) is the caller's job,
- * not this component's — it renders as a plain full-width button.
+ * toggle it afterward. Icon-only by design — the icon shown is the mode
+ * you'd switch TO (moon = switch to dark, sun = switch to light), not the
+ * current mode, matching how the icon itself communicates the action.
  */
 export default function ThemeToggle() {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
@@ -30,19 +32,22 @@ export default function ThemeToggle() {
   return (
     <button
       onClick={toggle}
+      aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+      title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
       style={{
-        width: "100%",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: 32,
+        height: 32,
         background: "transparent",
         border: `1px solid ${colors.hairlineStrong}`,
         borderRadius: 6,
         color: colors.body,
-        fontSize: 12,
-        fontWeight: 500,
-        padding: "8px 10px",
         cursor: "pointer",
       }}
     >
-      {theme === "dark" ? "Light mode" : "Dark mode"}
+      {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
     </button>
   );
 }

@@ -14,32 +14,24 @@ interface NavItem {
 }
 
 /**
- * Replaces the former top Nav.tsx. Same routes: Leads and Send both point
- * at the same #leads-list anchor (that table is both the lead list and
- * where the per-row Send button lives); CSV Import points at the
- * #csv-import anchor, the other section of the same page. Webhook Status
- * intentionally excluded, per prior explicit instruction.
+ * Replaces the former top Nav.tsx. Leads/CSV Import/Send are now three
+ * genuinely separate pages (the Import → Select → Send workflow), each
+ * with its own route — no more anchor-fragment sharing on one page.
+ * Webhook Status intentionally excluded, per prior explicit instruction.
  */
 const NAV: NavItem[] = [
   { label: "Dashboard", href: "/", icon: LayoutDashboard },
-  { label: "Leads", href: "/leads#leads-list", icon: Users },
-  { label: "CSV Import", href: "/leads#csv-import", icon: FileUp },
+  { label: "Leads", href: "/leads", icon: Users },
+  { label: "CSV Import", href: "/leads/import", icon: FileUp },
   { label: "Campaigns", href: "/campaigns", icon: Megaphone },
   { label: "Conversations", href: "/conversations", icon: MessagesSquare },
-  { label: "Send", href: "/leads#leads-list", icon: Send },
+  { label: "Send", href: "/leads/send", icon: Send },
 ];
-
-function basePathOf(href: string): string {
-  const hashIndex = href.indexOf("#");
-  return hashIndex === -1 ? href : href.slice(0, hashIndex);
-}
 
 /**
  * Active state comes from the real URL (usePathname), not local click
  * state — correct on direct load, refresh, and back/forward, not just
- * after a click in this session. Leads/CSV Import/Send share the "/leads"
- * base path, so all three legitimately highlight together there — they
- * really are the same page, not a bug.
+ * after a click in this session.
  */
 export default function Sidebar() {
   const pathname = usePathname();
@@ -84,7 +76,7 @@ export default function Sidebar() {
       <nav style={{ marginTop: space.md, display: "flex", flexDirection: "column", gap: 4, flex: 1 }}>
         {NAV.map((item) => {
           const Icon = item.icon;
-          const isActive = pathname === basePathOf(item.href);
+          const isActive = pathname === item.href;
           return (
             <Link
               key={item.label}
@@ -124,7 +116,7 @@ export default function Sidebar() {
         })}
       </nav>
 
-      <div style={{ borderTop: `1px solid ${colors.hairline}`, paddingTop: space.xs, marginTop: space.xs }}>
+      <div style={{ borderTop: `1px solid ${colors.hairline}`, paddingTop: space.xs, marginTop: space.xs, display: "flex" }}>
         <ThemeToggle />
       </div>
     </aside>
