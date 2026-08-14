@@ -1,13 +1,9 @@
 import { prisma } from "@/lib/prisma";
 
-/**
- * Not the raw Conversation.status field (a free-form string, never actually
- * set anywhere beyond its "open" default). Derived instead from
- * lastInboundAt/lastOutboundAt — real, already-populated fields — so it
- * reflects something true: is the lead waiting on us, or did we already
- * respond.
- */
-export type DerivedConversationStatus = "awaiting" | "responded" | "open";
+import { deriveConversationStatus, CONVERSATION_STATUS_DISPLAY, type DerivedConversationStatus } from "./conversation-status";
+
+export { deriveConversationStatus, CONVERSATION_STATUS_DISPLAY };
+export type { DerivedConversationStatus };
 
 export interface RecentConversation {
   id: string;
@@ -17,19 +13,6 @@ export interface RecentConversation {
   lastActivity: Date;
   status: DerivedConversationStatus;
 }
-
-export function deriveConversationStatus(lastInboundAt: Date | null, lastOutboundAt: Date | null): DerivedConversationStatus {
-  if (lastInboundAt && (!lastOutboundAt || lastInboundAt > lastOutboundAt)) return "awaiting";
-  if (lastOutboundAt) return "responded";
-  return "open";
-}
-
-/** Shared label/tone mapping — used by both the Dashboard widget and the Conversations page, one source of truth. */
-export const CONVERSATION_STATUS_DISPLAY: Record<DerivedConversationStatus, { tone: "ok" | "warn" | "neutral"; label: string }> = {
-  awaiting: { tone: "warn", label: "Awaiting reply" },
-  responded: { tone: "ok", label: "Responded" },
-  open: { tone: "neutral", label: "Open" },
-};
 
 function initialsFor(name: string | null, phone: string): string {
   if (name) {
