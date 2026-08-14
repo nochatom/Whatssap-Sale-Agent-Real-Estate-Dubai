@@ -68,7 +68,13 @@ export default function SendCampaignClient({
           body: JSON.stringify({ leadId: lead.id, campaignId: selectedCampaign.id }),
         });
         const data = await res.json();
-        setSendResults((prev) => ({ ...prev, [lead.id]: data }));
+        // The route's early-return paths (missing fields, no conversation
+        // linking this lead to the campaign, campaign not found) reply with
+        // a plain {error} shape, not {outcome, result} — normalize those
+        // here so the table shows the real reason instead of falling
+        // through to the compliance-gate branch with nothing to show.
+        const outcome = res.ok ? data : { outcome: "error", message: data.error ?? `Request failed (HTTP ${res.status})` };
+        setSendResults((prev) => ({ ...prev, [lead.id]: outcome }));
       } catch (err) {
         setSendResults((prev) => ({
           ...prev,
