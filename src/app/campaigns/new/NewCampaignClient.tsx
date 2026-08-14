@@ -81,7 +81,13 @@ export default function NewCampaignClient({ defaultSenderPhoneNumberId }: { defa
         <section style={{ ...sectionStyle, marginBottom: space.md }}>
           <label style={{ ...fieldLabel, display: "block", marginBottom: space.xs }}>
             Campaign name *
-            <input value={name} onChange={(e) => setName(e.target.value)} style={{ ...fieldInput, display: "block", marginTop: 4, width: "100%" }} placeholder="e.g. Spring Property Launch" />
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              style={{ ...fieldInput, display: "block", marginTop: 4, width: "100%", fontSize: 16 }}
+              placeholder="e.g. Spring Property Launch"
+              autoFocus
+            />
           </label>
 
           <label style={{ ...fieldLabel, display: "block", marginBottom: space.xs }}>
@@ -89,41 +95,42 @@ export default function NewCampaignClient({ defaultSenderPhoneNumberId }: { defa
             <input value={templateName} onChange={(e) => setTemplateName(e.target.value)} style={{ ...fieldInput, display: "block", marginTop: 4, width: "100%" }} placeholder="Meta-approved template name" />
           </label>
 
-          <div style={{ display: "flex", gap: space.sm, marginBottom: space.xs }}>
-            <label style={{ ...fieldLabel, display: "block", flex: 1 }}>
-              Template status
-              <select value={templateStatus} onChange={(e) => setTemplateStatus(e.target.value as TemplateStatus)} style={{ ...fieldInput, display: "block", marginTop: 4, width: "100%" }}>
-                <option value="PENDING">PENDING</option>
-                <option value="APPROVED">APPROVED</option>
-                <option value="REJECTED">REJECTED</option>
-              </select>
-            </label>
-            <label style={{ ...fieldLabel, display: "block", flex: 1 }}>
-              Campaign status
-              <select value={status} onChange={(e) => setStatus(e.target.value as CampaignStatus)} style={{ ...fieldInput, display: "block", marginTop: 4, width: "100%" }}>
-                <option value="DRAFT">DRAFT</option>
-                <option value="ACTIVE">ACTIVE</option>
-                <option value="PAUSED">PAUSED</option>
-                <option value="ARCHIVED">ARCHIVED</option>
-              </select>
-            </label>
-          </div>
-
           <label style={{ ...fieldLabel, display: "block", marginBottom: space.xs }}>
             Sender phone number ID *
             <input value={senderPhoneNumberId} onChange={(e) => setSenderPhoneNumberId(e.target.value)} style={{ ...fieldInput, display: "block", marginTop: 4, width: "100%", fontFamily: "monospace" }} placeholder="Meta phone_number_id" />
           </label>
 
-          <div style={{ display: "flex", gap: space.sm }}>
-            <label style={{ ...fieldLabel, display: "block", flex: 1 }}>
-              Daily budget per number *
-              <input type="number" min={0} value={dailyBudgetPerNumber} onChange={(e) => setDailyBudgetPerNumber(e.target.value)} style={{ ...fieldInput, display: "block", marginTop: 4, width: "100%" }} />
-            </label>
-            <label style={{ ...fieldLabel, display: "block", flex: 1 }}>
-              Follow-up delay (minutes)
-              <input type="number" min={0} value={followUpDelayMinutes} onChange={(e) => setFollowUpDelayMinutes(e.target.value)} style={{ ...fieldInput, display: "block", marginTop: 4, width: "100%" }} placeholder="optional" />
-            </label>
-          </div>
+          <label style={{ ...fieldLabel, display: "block", marginBottom: space.sm }}>
+            Daily budget per number *
+            <input type="number" min={0} value={dailyBudgetPerNumber} onChange={(e) => setDailyBudgetPerNumber(e.target.value)} style={{ ...fieldInput, display: "block", marginTop: 4, width: 160 }} />
+          </label>
+
+          <details>
+            <summary style={{ ...fieldLabel, cursor: "pointer", listStyle: "none" }}>Details</summary>
+            <div style={{ display: "flex", gap: space.sm, marginTop: space.xxs }}>
+              <label style={{ ...fieldLabel, display: "block", flex: 1 }}>
+                Campaign status
+                <select value={status} onChange={(e) => setStatus(e.target.value as CampaignStatus)} style={{ ...fieldInput, display: "block", marginTop: 4, width: "100%" }}>
+                  <option value="DRAFT">DRAFT</option>
+                  <option value="ACTIVE">ACTIVE</option>
+                  <option value="PAUSED">PAUSED</option>
+                  <option value="ARCHIVED">ARCHIVED</option>
+                </select>
+              </label>
+              <label style={{ ...fieldLabel, display: "block", flex: 1 }}>
+                Template status
+                <select value={templateStatus} onChange={(e) => setTemplateStatus(e.target.value as TemplateStatus)} style={{ ...fieldInput, display: "block", marginTop: 4, width: "100%" }}>
+                  <option value="PENDING">PENDING</option>
+                  <option value="APPROVED">APPROVED</option>
+                  <option value="REJECTED">REJECTED</option>
+                </select>
+              </label>
+              <label style={{ ...fieldLabel, display: "block", flex: 1 }}>
+                Follow-up delay (min)
+                <input type="number" min={0} value={followUpDelayMinutes} onChange={(e) => setFollowUpDelayMinutes(e.target.value)} style={{ ...fieldInput, display: "block", marginTop: 4, width: "100%" }} placeholder="optional" />
+              </label>
+            </div>
+          </details>
         </section>
 
         <button type="submit" disabled={!canSubmit || busy} style={buttonStyle("hero", !canSubmit || busy)}>

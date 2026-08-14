@@ -162,17 +162,28 @@ export default function ImportClient({ campaigns }: { campaigns: { id: string; n
         </div>
       )}
 
-      <section style={{ ...sectionStyle, marginBottom: space.lg }}>
-        <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>1. Upload</h2>
-        <p style={{ color: colors.mutedText, fontSize: 13, margin: `4px 0 ${space.sm}px` }}>Any CSV with a header row.</p>
-        <input
-          type="file"
-          accept=".csv,text/csv"
-          onChange={onFileChange}
-          style={{ color: colors.ink, fontSize: 13, display: "block" }}
-        />
-        {fileName && <p style={{ color: colors.mutedText, fontSize: 12, margin: `${space.xxs}px 0 0` }}>{fileName} — {dataRows.length} rows</p>}
-      </section>
+      {headers.length === 0 ? (
+        <section style={{ ...sectionStyle, marginBottom: space.lg }}>
+          <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>1. Upload</h2>
+          <p style={{ color: colors.mutedText, fontSize: 13, margin: `4px 0 ${space.sm}px` }}>Any CSV with a header row.</p>
+          <input id="csv-file-input" type="file" accept=".csv,text/csv" onChange={onFileChange} style={{ display: "none" }} />
+          <label htmlFor="csv-file-input" style={{ ...buttonStyle("outline", false), display: "inline-flex", alignItems: "center" }}>
+            Choose CSV file
+          </label>
+          {fileName && <p style={{ color: colors.mutedText, fontSize: 12, margin: `${space.xs}px 0 0` }}>{fileName} — {dataRows.length} rows</p>}
+        </section>
+      ) : (
+        <div style={{ display: "flex", alignItems: "center", gap: space.xxs, marginBottom: space.sm, fontSize: 13 }}>
+          <Badge tone="ok">✓</Badge>
+          <span style={{ color: colors.mutedText }}>
+            <span style={{ color: colors.ink }}>{fileName}</span> — {dataRows.length} rows
+          </span>
+          <input id="csv-file-input" type="file" accept=".csv,text/csv" onChange={onFileChange} style={{ display: "none" }} />
+          <label htmlFor="csv-file-input" style={{ color: colors.primary, fontSize: 12, cursor: "pointer", marginLeft: 4 }}>
+            Change file
+          </label>
+        </div>
+      )}
 
       {headers.length > 0 && (
         <section style={{ ...sectionStyle, marginBottom: space.lg }}>
@@ -202,7 +213,12 @@ export default function ImportClient({ campaigns }: { campaigns: { id: string; n
             </label>
             <label style={{ ...fieldLabel, display: "block" }}>
               Default country
-              <input value={defaultCountry} onChange={(e) => setDefaultCountry(e.target.value)} style={{ ...fieldInput, display: "block", marginTop: 4, width: 80 }} />
+              <select value={defaultCountry} onChange={(e) => setDefaultCountry(e.target.value)} style={{ ...fieldInput, display: "block", marginTop: 4, width: 160 }}>
+                <option value="AE">UAE (+971)</option>
+                <option value="SA">Saudi Arabia (+966)</option>
+                <option value="EG">Egypt (+20)</option>
+                <option value="DZ">Algeria (+213)</option>
+              </select>
             </label>
           </div>
 

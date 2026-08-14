@@ -21,7 +21,18 @@ interface Lead {
   name: string | null;
 }
 
-type SendOutcome = { outcome: "returned" | "blocked_before_send" | "error"; result?: unknown; message?: string };
+type ComplianceFailure =
+  | "suppression"
+  | "opt_out"
+  | "campaign_inactive"
+  | "daily_budget_exceeded"
+  | "idempotency_conflict"
+  | "service_window_closed"
+  | "template_not_approved";
+
+type SendOutboundResult = { sent: false; blockedBy: ComplianceFailure } | { sent: true; waMessageId: string; messageId: string };
+
+type SendOutcome = { outcome: "returned" | "blocked_before_send" | "error"; result?: SendOutboundResult; message?: string };
 
 /**
  * Uses the existing single-lead /api/leads/send route, called once per
@@ -94,8 +105,12 @@ export default function SendCampaignClient({
       <WorkflowStepper current="send" />
 
       <h1 style={{ fontSize: 26, fontWeight: 500, letterSpacing: "0.2px", margin: `0 0 ${space.xxs}px` }}>Send Campaign</h1>
-      <p style={{ color: colors.mutedText, fontSize: 13, margin: `0 0 ${space.md}px` }}>
+      <p style={{ color: colors.mutedText, fontSize: 13, margin: `0 0 ${space.xs}px` }}>
         Pick a campaign, review, and send the opener to the selected leads.
+      </p>
+      <p style={{ fontSize: 14, fontWeight: 600, color: colors.ink, margin: `0 0 ${space.md}px` }}>
+        {leads.length} recipient{leads.length === 1 ? "" : "s"}
+        {selectedCampaign ? <> → <span style={{ color: colors.primary }}>{selectedCampaign.name}</span></> : null}
       </p>
 
       <section style={{ ...sectionStyle, marginBottom: space.lg }}>
@@ -140,8 +155,11 @@ export default function SendCampaignClient({
         </ul>
       </section>
 
-      <section style={sectionStyle}>
+      <section style={{ ...sectionStyle, opacity: selectedCampaign ? 1 : 0.5 }}>
         <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>3. Confirm &amp; send</h2>
+        {!selectedCampaign && (
+          <p style={{ color: colors.mutedText, fontSize: 13, margin: `4px 0 0` }}>Pick a campaign above first.</p>
+        )}
 
         {!confirming ? (
           <button
@@ -189,8 +207,12 @@ export default function SendCampaignClient({
                           <span style={{ color: colors.semanticInfo }}>Blocked (test mode): {result.message}</span>
                         ) : result.outcome === "error" ? (
                           <span style={{ color: colors.semanticWarning }}>Error: {result.message}</span>
+                        ) : result.result?.sent ? (
+                          <span style={{ color: colors.semanticSuccess }}>Sent — message {result.result.waMessageId}</span>
                         ) : (
-                          <span style={{ color: colors.body }}>{JSON.stringify(result.result)}</span>
+                          <span style={{ color: colors.semanticInfo }}>
+                            Blocked by compliance gate: {result.result?.blockedBy ?? "unknown"}
+                          </span>
                         )}
                       </td>
                     </tr>

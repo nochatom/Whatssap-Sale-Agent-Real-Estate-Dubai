@@ -19,15 +19,13 @@ export const dynamic = "force-dynamic";
 
 /**
  * Server component — reads real data directly via the existing Prisma
- * client, no new API routes. Information-only: KPI strip, then real
- * operational widgets in the order requested (KPI, Sales Activity,
- * Campaign Performance, Recent Conversations, Follow-ups, Conversation
- * Activity, Recent Activity) — no workflow entry point (that's what the
- * sidebar nav and the Leads/CSV Import/Campaigns/Conversations/Send pages
- * already are) and no Test Mode banner (that's shown on Send, where
- * sending actually happens — see SendCampaignClient.tsx). Same dark token
- * system as every other page (colors/space/sectionStyle from
- * ui-tokens.ts); no new colors, gradients, or shadows introduced.
+ * client, no new API routes, no new components. Two zones instead of
+ * seven equal-weight stacked cards: "Pulse" (KPIs + both charts, grouped
+ * together since they're both at-a-glance signal) then "Operations"
+ * (the four detail lists/tables). Section spacing widened from 24px to
+ * 48px so each zone actually reads as separate, not a single undifferentiated
+ * scroll. Same dark token system as every other page (colors/space/
+ * sectionStyle from ui-tokens.ts); no new colors, gradients, or shadows.
  */
 export default async function DashboardPage() {
   const [activity, campaignPerformance, recentConversations, upcomingFollowUps, kpis, salesActivity, conversationActivity] =
@@ -47,15 +45,18 @@ export default async function DashboardPage() {
         Wahatssap Dashboard
       </h1>
 
-      <div style={{ marginTop: space.md, marginBottom: 64 }}>
+      {/* Pulse: KPIs + both charts — the at-a-glance zone, grouped together */}
+      <div style={{ marginTop: space.md }}>
         <StatCards kpis={kpis} />
       </div>
 
-      <div>
+      <div style={{ marginTop: space.sm, display: "grid", gap: space.sm, gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))" }}>
         <SalesChart data={salesActivity} />
+        <ConversationActivityChart data={conversationActivity} />
       </div>
 
-      <div style={{ marginTop: space.sm }}>
+      {/* Operations: the detail lists/tables, visually separated from the pulse zone above */}
+      <div style={{ marginTop: 48 }}>
         <CampaignPerformanceTable campaigns={campaignPerformance} />
       </div>
 
@@ -65,10 +66,6 @@ export default async function DashboardPage() {
 
       <div style={{ marginTop: space.sm }}>
         <UpcomingFollowUps followUps={upcomingFollowUps} />
-      </div>
-
-      <div style={{ marginTop: space.sm }}>
-        <ConversationActivityChart data={conversationActivity} />
       </div>
 
       <div style={{ marginTop: space.sm }}>

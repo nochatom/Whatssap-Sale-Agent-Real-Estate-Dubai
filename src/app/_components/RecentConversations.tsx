@@ -2,14 +2,8 @@ import Link from "next/link";
 
 import { colors, space, sectionStyle } from "../_lib/ui-tokens";
 import { relativeTime } from "../_lib/activity";
-import type { DerivedConversationStatus, RecentConversation } from "../_lib/recent-conversations";
+import { CONVERSATION_STATUS_DISPLAY, type RecentConversation } from "../_lib/recent-conversations";
 import Badge from "./Badge";
-
-const STATUS: Record<DerivedConversationStatus, { tone: "ok" | "warn" | "neutral"; label: string }> = {
-  awaiting: { tone: "warn", label: "Awaiting reply" },
-  responded: { tone: "ok", label: "Responded" },
-  open: { tone: "neutral", label: "Open" },
-};
 
 /**
  * Same visual result as the Tailwind/shadcn version this was ported from,
@@ -32,7 +26,7 @@ export default function RecentConversations({ conversations }: { conversations: 
       ) : (
         <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
           {conversations.map((c) => {
-            const status = STATUS[c.status];
+            const status = CONVERSATION_STATUS_DISPLAY[c.status];
             return (
               <li
                 key={c.id}

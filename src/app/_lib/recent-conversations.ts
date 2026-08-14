@@ -18,6 +18,19 @@ export interface RecentConversation {
   status: DerivedConversationStatus;
 }
 
+export function deriveConversationStatus(lastInboundAt: Date | null, lastOutboundAt: Date | null): DerivedConversationStatus {
+  if (lastInboundAt && (!lastOutboundAt || lastInboundAt > lastOutboundAt)) return "awaiting";
+  if (lastOutboundAt) return "responded";
+  return "open";
+}
+
+/** Shared label/tone mapping — used by both the Dashboard widget and the Conversations page, one source of truth. */
+export const CONVERSATION_STATUS_DISPLAY: Record<DerivedConversationStatus, { tone: "ok" | "warn" | "neutral"; label: string }> = {
+  awaiting: { tone: "warn", label: "Awaiting reply" },
+  responded: { tone: "ok", label: "Responded" },
+  open: { tone: "neutral", label: "Open" },
+};
+
 function initialsFor(name: string | null, phone: string): string {
   if (name) {
     const initials = name
@@ -49,20 +62,13 @@ export async function getRecentConversations(limit = 6): Promise<RecentConversat
   return conversations.map((c) => {
     const last = c.messages[0];
 
-    let status: DerivedConversationStatus = "open";
-    if (c.lastInboundAt && (!c.lastOutboundAt || c.lastInboundAt > c.lastOutboundAt)) {
-      status = "awaiting";
-    } else if (c.lastOutboundAt) {
-      status = "responded";
-    }
-
     return {
       id: c.id,
       leadLabel: c.lead.name ?? c.lead.phoneE164,
       initials: initialsFor(c.lead.name, c.lead.phoneE164),
       message: last ? (last.body ?? `[${last.type}]`) : "No messages yet",
       lastActivity: c.updatedAt,
-      status,
+      status: deriveConversationStatus(c.lastInboundAt, c.lastOutboundAt),
     };
   });
 }

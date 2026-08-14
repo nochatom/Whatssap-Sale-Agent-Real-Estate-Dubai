@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { prisma } from "@/lib/prisma";
 import Badge from "../_components/Badge";
+import CopyButton from "../_components/CopyButton";
 import { colors, space, sectionStyle, fieldLabel, buttonStyle } from "../_lib/ui-tokens";
 
 // Queries the DB on every load — must render per-request, not be statically
@@ -51,8 +52,13 @@ export default async function CampaignsPage() {
           <tbody>
             {campaigns.map((camp) => (
               <tr key={camp.id} style={{ borderTop: `1px solid ${colors.hairline}` }}>
-                <td style={{ padding: "10px 0", fontFamily: "monospace", color: colors.ink }}>{camp.id}</td>
-                <td style={{ color: colors.body }}>{camp.name}</td>
+                <td style={{ padding: "10px 0" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <span style={{ fontFamily: "monospace", fontSize: 11, color: colors.mutedText }}>{camp.id}</span>
+                    <CopyButton value={camp.id} />
+                  </div>
+                </td>
+                <td style={{ color: colors.ink, fontWeight: 600 }}>{camp.name}</td>
                 <td>
                   <Badge tone={camp.status === "ACTIVE" ? "ok" : "neutral"}>{camp.status}</Badge>
                 </td>

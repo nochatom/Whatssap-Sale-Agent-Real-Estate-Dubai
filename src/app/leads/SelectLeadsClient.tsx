@@ -149,55 +149,66 @@ export default function SelectLeadsClient() {
       )}
 
       <section style={sectionStyle}>
-        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-end", justifyContent: "space-between", gap: space.xs, marginBottom: space.sm }}>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: space.xs, alignItems: "flex-end" }}>
-            <label style={{ ...fieldLabel, display: "block" }}>
-              Search
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Name or phone"
-                style={{ ...fieldInput, display: "block", marginTop: 4, width: 220 }}
-              />
-            </label>
-            <label style={{ ...fieldLabel, display: "block" }}>
-              Opted in
-              <select
-                value={optedInFilter}
-                onChange={(e) => setOptedInFilter(e.target.value as OptedInFilter)}
-                style={{ ...fieldInput, display: "block", marginTop: 4, width: 140 }}
-              >
-                <option value="all">All</option>
-                <option value="opted-in">Opted in</option>
-                <option value="not-opted-in">Not opted in</option>
-              </select>
-            </label>
-            <button onClick={loadLeads} disabled={loading} style={buttonStyle("outline", loading, true)}>
-              Refresh
+        <div style={{ display: "flex", flexWrap: "wrap", gap: space.xs, alignItems: "flex-end" }}>
+          <label style={{ ...fieldLabel, display: "block" }}>
+            Search
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Name or phone"
+              style={{ ...fieldInput, display: "block", marginTop: 4, width: 220 }}
+            />
+          </label>
+          <label style={{ ...fieldLabel, display: "block" }}>
+            Opted in
+            <select
+              value={optedInFilter}
+              onChange={(e) => setOptedInFilter(e.target.value as OptedInFilter)}
+              style={{ ...fieldInput, display: "block", marginTop: 4, width: 140 }}
+            >
+              <option value="all">All</option>
+              <option value="opted-in">Opted in</option>
+              <option value="not-opted-in">Not opted in</option>
+            </select>
+          </label>
+          <button onClick={loadLeads} disabled={loading} style={buttonStyle("outline", loading, true)}>
+            Refresh
+          </button>
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: space.xs,
+            marginTop: space.sm,
+            paddingTop: space.xs,
+            borderTop: `1px solid ${colors.hairline}`,
+            marginBottom: space.sm,
+          }}
+        >
+          <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: colors.ink }}>{selected.size} selected</p>
+          <div style={{ display: "flex", gap: space.xxs }}>
+            <button
+              onClick={handleDeleteSelected}
+              disabled={selected.size === 0 || deleting}
+              style={{
+                ...buttonStyle("outline", selected.size === 0 || deleting, true),
+                color: colors.semanticWarning,
+                borderColor: colors.semanticWarning,
+              }}
+            >
+              {deleting ? "Deleting…" : "Delete"}
             </button>
-          </div>
-          <div style={{ textAlign: "right" }}>
-            <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: colors.ink }}>{selected.size} selected</p>
-            <div style={{ display: "flex", gap: space.xxs, marginTop: 6, justifyContent: "flex-end" }}>
-              <button
-                onClick={handleDeleteSelected}
-                disabled={selected.size === 0 || deleting}
-                style={{
-                  ...buttonStyle("outline", selected.size === 0 || deleting, true),
-                  color: colors.semanticWarning,
-                  borderColor: colors.semanticWarning,
-                }}
-              >
-                {deleting ? "Deleting…" : "Delete"}
-              </button>
-              <button
-                onClick={goToSend}
-                disabled={selected.size === 0}
-                style={buttonStyle("hero", selected.size === 0)}
-              >
-                Continue to Send Campaign →
-              </button>
-            </div>
+            <button
+              onClick={goToSend}
+              disabled={selected.size === 0}
+              style={buttonStyle("hero", selected.size === 0)}
+            >
+              Continue to Send Campaign →
+            </button>
           </div>
         </div>
 
@@ -210,6 +221,7 @@ export default function SelectLeadsClient() {
               <th align="left">Phone</th>
               <th align="left">Name</th>
               <th align="left">Opted in</th>
+              <th align="left">Added</th>
             </tr>
           </thead>
           <tbody>
@@ -221,22 +233,24 @@ export default function SelectLeadsClient() {
                   onClick={() => toggle(lead.id)}
                   style={{
                     borderTop: `1px solid ${colors.hairline}`,
+                    borderLeft: `2px solid ${isSelected ? colors.primary : "transparent"}`,
                     background: isSelected ? colors.canvasElevated : "transparent",
                     cursor: "pointer",
                   }}
                 >
-                  <td style={{ padding: "10px 0" }}>
+                  <td style={{ padding: "10px 0 10px 8px" }}>
                     <input type="checkbox" checked={isSelected} onChange={() => toggle(lead.id)} onClick={(e) => e.stopPropagation()} />
                   </td>
                   <td style={{ color: colors.ink }}>{lead.phoneE164}</td>
                   <td style={{ color: colors.body }}>{lead.name ?? "—"}</td>
                   <td>{lead.optedIn ? <Badge tone="ok">yes</Badge> : <Badge tone="neutral">no</Badge>}</td>
+                  <td style={{ color: colors.mutedText, fontSize: 12 }}>{new Date(lead.createdAt).toLocaleDateString()}</td>
                 </tr>
               );
             })}
             {!loading && filtered.length === 0 && (
               <tr>
-                <td colSpan={4} style={{ color: colors.mutedText, padding: space.xs }}>
+                <td colSpan={5} style={{ color: colors.mutedText, padding: space.xs }}>
                   {leads.length === 0 ? (
                     <>No leads yet — import some on the Import CSV step.</>
                   ) : (
