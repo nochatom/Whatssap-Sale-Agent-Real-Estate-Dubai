@@ -32,7 +32,7 @@ export default async function CampaignsPage() {
           </p>
         </div>
         <Link href="/campaigns/new" style={{ ...buttonStyle("hero", false), display: "inline-flex", alignItems: "center", textDecoration: "none", flexShrink: 0 }}>
-          New Campaign
+          + New Campaign
         </Link>
       </div>
 

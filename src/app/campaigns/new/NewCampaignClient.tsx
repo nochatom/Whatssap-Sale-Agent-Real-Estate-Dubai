@@ -134,7 +134,7 @@ export default function NewCampaignClient({ defaultSenderPhoneNumberId }: { defa
         </section>
 
         <button type="submit" disabled={!canSubmit || busy} style={buttonStyle("hero", !canSubmit || busy)}>
-          {busy ? "Creating…" : "Create Campaign"}
+          {busy ? "Launching…" : "Launch Campaign"}
         </button>
       </form>
     </main>
