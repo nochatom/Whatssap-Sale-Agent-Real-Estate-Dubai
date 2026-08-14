@@ -3,6 +3,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import Badge from "../_components/Badge";
 import CopyButton from "../_components/CopyButton";
+import DeleteCampaignButton from "../_components/DeleteCampaignButton";
 import { colors, space, sectionStyle, fieldLabel, buttonStyle } from "../_lib/ui-tokens";
 
 // Queries the DB on every load — must render per-request, not be statically
@@ -47,6 +48,7 @@ export default async function CampaignsPage() {
               <th align="left">Sender number</th>
               <th align="left">Daily budget</th>
               <th align="left">Leads linked</th>
+              <th align="left"></th>
             </tr>
           </thead>
           <tbody>
@@ -69,11 +71,14 @@ export default async function CampaignsPage() {
                 <td style={{ color: colors.body }}>{camp.senderPhoneNumberId}</td>
                 <td style={{ color: colors.body }}>{camp.dailyBudgetPerNumber}</td>
                 <td style={{ color: colors.body }}>{camp._count.conversations}</td>
+                <td align="right">
+                  <DeleteCampaignButton id={camp.id} name={camp.name} />
+                </td>
               </tr>
             ))}
             {campaigns.length === 0 && (
               <tr>
-                <td colSpan={7} style={{ color: colors.mutedText, padding: space.xs }}>
+                <td colSpan={8} style={{ color: colors.mutedText, padding: space.xs }}>
                   No campaigns yet.
                 </td>
               </tr>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { Trash2 } from "lucide-react";
 
 import Badge from "../_components/Badge";
 import { colors, space, sectionStyle } from "../_lib/ui-tokens";
@@ -115,6 +116,24 @@ export default function InboxClient({ initialConversations }: { initialConversat
     threadEndRef.current?.scrollIntoView({ block: "end" });
   }, [messages.length]);
 
+  async function handleDeleteConversation(e: React.MouseEvent, id: string, label: string) {
+    e.stopPropagation();
+    if (!window.confirm(`Delete conversation with ${label}? This can't be undone.`)) return;
+    try {
+      const res = await fetch(`/api/conversations/${id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) {
+        window.alert(data.error ?? "Failed to delete conversation");
+        return;
+      }
+      const remaining = conversations.filter((c) => c.id !== id);
+      setConversations(remaining);
+      if (selectedId === id) setSelectedId(remaining[0]?.id ?? null);
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: space.sm, alignItems: "flex-start" }}>
       {/* List pane */}
@@ -127,9 +146,17 @@ export default function InboxClient({ initialConversations }: { initialConversat
             const isSelected = conv.id === selectedId;
             const statusDisplay = CONVERSATION_STATUS_DISPLAY[conv.status];
             return (
-              <button
+              <div
                 key={conv.id}
+                role="button"
+                tabIndex={0}
                 onClick={() => setSelectedId(conv.id)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setSelectedId(conv.id);
+                  }
+                }}
                 style={{
                   display: "block",
                   width: "100%",
@@ -147,9 +174,29 @@ export default function InboxClient({ initialConversations }: { initialConversat
                   <span style={{ fontSize: 14, fontWeight: 600, color: colors.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {leadLabel(conv.lead)}
                   </span>
-                  <span style={{ flexShrink: 0, fontSize: 11, color: colors.mutedText }}>
-                    {new Date(conv.updatedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                  </span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 2, flexShrink: 0 }}>
+                    <span style={{ fontSize: 11, color: colors.mutedText }}>
+                      {new Date(conv.updatedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                    </span>
+                    <button
+                      onClick={(e) => handleDeleteConversation(e, conv.id, leadLabel(conv.lead))}
+                      aria-label={`Delete conversation with ${leadLabel(conv.lead)}`}
+                      title="Delete conversation"
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        width: 22,
+                        height: 22,
+                        background: "transparent",
+                        border: "none",
+                        color: colors.semanticWarning,
+                        cursor: "pointer",
+                      }}
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
                 </div>
                 <p
                   style={{
@@ -167,7 +214,7 @@ export default function InboxClient({ initialConversations }: { initialConversat
                   <Badge tone={statusDisplay.tone}>{statusDisplay.label}</Badge>
                   {!conv.campaign && <Badge tone="neutral">Organic</Badge>}
                 </div>
-              </button>
+              </div>
             );
           })}
         </div>
