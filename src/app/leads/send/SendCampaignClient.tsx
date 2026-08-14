@@ -32,11 +32,9 @@ type SendOutcome = { outcome: "returned" | "blocked_before_send" | "error"; resu
  * than being silently pre-filtered — real backend behavior, not hidden.
  */
 export default function SendCampaignClient({
-  sendingEnabled,
   campaigns,
   leads,
 }: {
-  sendingEnabled: boolean;
   campaigns: Campaign[];
   leads: Lead[];
 }) {
@@ -99,23 +97,6 @@ export default function SendCampaignClient({
       <p style={{ color: colors.mutedText, fontSize: 13, margin: `0 0 ${space.md}px` }}>
         Pick a campaign, review, and send the opener to the selected leads.
       </p>
-
-      <div
-        role="status"
-        style={{
-          borderLeft: `4px solid ${sendingEnabled ? colors.semanticWarning : colors.semanticInfo}`,
-          background: colors.canvasElevated,
-          padding: `${space.xxs}px ${space.xs}px`,
-          marginBottom: space.md,
-          fontSize: 13,
-          fontWeight: 700,
-          letterSpacing: "0.4px",
-        }}
-      >
-        {sendingEnabled
-          ? "SENDING_ENABLED IS \"TRUE\" ON THIS SERVER — SEND WILL ATTEMPT A REAL WHATSAPP MESSAGE."
-          : "LOCAL / TEST MODE — SENDING_ENABLED IS NOT SET. NO REAL WHATSAPP MESSAGE CAN BE SENT FROM THIS PAGE."}
-      </div>
 
       <section style={{ ...sectionStyle, marginBottom: space.lg }}>
         <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>1. Campaign</h2>

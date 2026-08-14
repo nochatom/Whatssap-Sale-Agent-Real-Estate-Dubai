@@ -32,7 +32,7 @@ export default function SelectLeadsClient() {
   const [query, setQuery] = useState("");
   const [optedInFilter, setOptedInFilter] = useState<OptedInFilter>("all");
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   async function loadLeads() {
     setLoading(true);
@@ -91,25 +91,33 @@ export default function SelectLeadsClient() {
     router.push(`/leads/send?leadIds=${ids.map(encodeURIComponent).join(",")}`);
   }
 
-  async function handleDelete(lead: Lead) {
-    if (!window.confirm(`Delete ${lead.name ?? lead.phoneE164}? This can't be undone.`)) return;
-    setDeletingId(lead.id);
+  async function handleDeleteSelected() {
+    const ids = Array.from(selected);
+    if (ids.length === 0) return;
+    const label = ids.length === 1 ? (leads.find((l) => l.id === ids[0])?.phoneE164 ?? "this lead") : `these ${ids.length} leads`;
+    if (!window.confirm(`Delete ${label}? This can't be undone.`)) return;
+
+    setDeleting(true);
     setError(null);
-    try {
-      const res = await fetch(`/api/leads?id=${encodeURIComponent(lead.id)}`, { method: "DELETE" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to delete lead");
-      setLeads((prev) => prev.filter((l) => l.id !== lead.id));
-      setSelected((prev) => {
-        const next = new Set(prev);
-        next.delete(lead.id);
-        return next;
-      });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setDeletingId(null);
+    const failures: string[] = [];
+    for (const id of ids) {
+      try {
+        const res = await fetch(`/api/leads?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Failed to delete lead");
+        setLeads((prev) => prev.filter((l) => l.id !== id));
+        setSelected((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+      } catch (err) {
+        const lead = leads.find((l) => l.id === id);
+        failures.push(`${lead?.phoneE164 ?? id}: ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
+    if (failures.length > 0) setError(failures.join(" · "));
+    setDeleting(false);
   }
 
   return (
@@ -170,13 +178,26 @@ export default function SelectLeadsClient() {
           </div>
           <div style={{ textAlign: "right" }}>
             <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: colors.ink }}>{selected.size} selected</p>
-            <button
-              onClick={goToSend}
-              disabled={selected.size === 0}
-              style={{ ...buttonStyle("hero", selected.size === 0), marginTop: 6 }}
-            >
-              Continue to Send Campaign →
-            </button>
+            <div style={{ display: "flex", gap: space.xxs, marginTop: 6, justifyContent: "flex-end" }}>
+              <button
+                onClick={handleDeleteSelected}
+                disabled={selected.size === 0 || deleting}
+                style={{
+                  ...buttonStyle("outline", selected.size === 0 || deleting, true),
+                  color: colors.semanticWarning,
+                  borderColor: colors.semanticWarning,
+                }}
+              >
+                {deleting ? "Deleting…" : "Delete"}
+              </button>
+              <button
+                onClick={goToSend}
+                disabled={selected.size === 0}
+                style={buttonStyle("hero", selected.size === 0)}
+              >
+                Continue to Send Campaign →
+              </button>
+            </div>
           </div>
         </div>
 
@@ -189,7 +210,6 @@ export default function SelectLeadsClient() {
               <th align="left">Phone</th>
               <th align="left">Name</th>
               <th align="left">Opted in</th>
-              <th align="left"></th>
             </tr>
           </thead>
           <tbody>
@@ -211,24 +231,12 @@ export default function SelectLeadsClient() {
                   <td style={{ color: colors.ink }}>{lead.phoneE164}</td>
                   <td style={{ color: colors.body }}>{lead.name ?? "—"}</td>
                   <td>{lead.optedIn ? <Badge tone="ok">yes</Badge> : <Badge tone="neutral">no</Badge>}</td>
-                  <td style={{ textAlign: "right" }}>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDelete(lead);
-                      }}
-                      disabled={deletingId !== null}
-                      style={{ ...buttonStyle("outline", deletingId !== null, true), color: colors.semanticWarning, borderColor: colors.semanticWarning }}
-                    >
-                      {deletingId === lead.id ? "Deleting…" : "Delete"}
-                    </button>
-                  </td>
                 </tr>
               );
             })}
             {!loading && filtered.length === 0 && (
               <tr>
-                <td colSpan={5} style={{ color: colors.mutedText, padding: space.xs }}>
+                <td colSpan={4} style={{ color: colors.mutedText, padding: space.xs }}>
                   {leads.length === 0 ? (
                     <>No leads yet — import some on the Import CSV step.</>
                   ) : (

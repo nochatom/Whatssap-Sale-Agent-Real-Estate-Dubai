@@ -16,7 +16,7 @@ import { colors, space, sectionStyle, fieldLabel, fieldInput, buttonStyle } from
 export default function NewLeadClient({ campaigns }: { campaigns: { id: string; name: string }[] }) {
   const router = useRouter();
   const [phone, setPhone] = useState("");
-  const [defaultCountry, setDefaultCountry] = useState("AE");
+  const [defaultCountry, setDefaultCountry] = useState("");
   const [name, setName] = useState("");
   const [market, setMarket] = useState("");
   const [language, setLanguage] = useState("");
@@ -38,7 +38,7 @@ export default function NewLeadClient({ campaigns }: { campaigns: { id: string; 
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           phone: phone.trim(),
-          defaultCountry,
+          defaultCountry: defaultCountry || undefined,
           name: name.trim() || undefined,
           market: market.trim() || undefined,
           language: language.trim() || undefined,
@@ -81,16 +81,32 @@ export default function NewLeadClient({ campaigns }: { campaigns: { id: string; 
 
       <form onSubmit={handleSubmit}>
         <section style={{ ...sectionStyle, marginBottom: space.md }}>
-          <label style={{ ...fieldLabel, display: "block", marginBottom: space.xs }}>
-            Phone *
-            <input
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              style={{ ...fieldInput, display: "block", marginTop: 4, width: "100%", fontSize: 16 }}
-              placeholder="e.g. 050 123 4567"
-              autoFocus
-            />
-          </label>
+          <div style={{ display: "flex", gap: space.sm, marginBottom: space.xs }}>
+            <label style={{ ...fieldLabel, display: "block", flex: 2 }}>
+              Phone *
+              <input
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                style={{ ...fieldInput, display: "block", marginTop: 4, width: "100%", fontSize: 16 }}
+                placeholder="e.g. 050 123 4567"
+                autoFocus
+              />
+            </label>
+            <label style={{ ...fieldLabel, display: "block", flex: 1 }}>
+              Country code
+              <select
+                value={defaultCountry}
+                onChange={(e) => setDefaultCountry(e.target.value)}
+                style={{ ...fieldInput, display: "block", marginTop: 4, width: "100%" }}
+              >
+                <option value="">— select —</option>
+                <option value="AE">UAE (+971)</option>
+                <option value="SA">Saudi Arabia (+966)</option>
+                <option value="EG">Egypt (+20)</option>
+                <option value="DZ">Algeria (+213)</option>
+              </select>
+            </label>
+          </div>
 
           <label style={{ ...fieldLabel, display: "block", marginBottom: space.xs }}>
             Name
@@ -122,15 +138,6 @@ export default function NewLeadClient({ campaigns }: { campaigns: { id: string; 
               <label style={{ ...fieldLabel, display: "block", flex: 1 }}>
                 Language
                 <input value={language} onChange={(e) => setLanguage(e.target.value)} style={{ ...fieldInput, display: "block", marginTop: 4, width: "100%" }} placeholder="e.g. en" />
-              </label>
-              <label style={{ ...fieldLabel, display: "block", flex: 1 }}>
-                Parse phone as
-                <select value={defaultCountry} onChange={(e) => setDefaultCountry(e.target.value)} style={{ ...fieldInput, display: "block", marginTop: 4, width: "100%" }}>
-                  <option value="AE">UAE (AE)</option>
-                  <option value="SA">Saudi Arabia (SA)</option>
-                  <option value="EG">Egypt (EG)</option>
-                  <option value="DZ">Algeria (DZ)</option>
-                </select>
               </label>
             </div>
           </details>

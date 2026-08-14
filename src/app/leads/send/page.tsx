@@ -1,8 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import SendCampaignClient from "./SendCampaignClient";
 
-// Reads SENDING_ENABLED and the DB on every load — must render per-request,
-// not be statically prerendered at build time.
+// Queries the DB on every load — must render per-request, not be
+// statically prerendered at build time.
 export const dynamic = "force-dynamic";
 
 /**
@@ -10,13 +10,17 @@ export const dynamic = "force-dynamic";
  * the ?leadIds= query param set by the Select Leads page) via Prisma
  * directly — same pattern as every other page here, no new API route
  * needed for read-only data this page's own render already has access to.
+ *
+ * No Test Mode banner on this page (removed on request) — SENDING_ENABLED
+ * itself is untouched and still unset/false, so /api/leads/send still
+ * hard-blocks any real WhatsApp send exactly as before; only the UI notice
+ * about it is gone.
  */
 export default async function SendCampaignPage({
   searchParams,
 }: {
   searchParams: Promise<{ leadIds?: string }>;
 }) {
-  const sendingEnabled = process.env.SENDING_ENABLED === "true";
   const { leadIds: leadIdsParam } = await searchParams;
   const leadIds = leadIdsParam ? leadIdsParam.split(",").filter(Boolean) : [];
 
@@ -33,5 +37,5 @@ export default async function SendCampaignPage({
       : Promise.resolve([]),
   ]);
 
-  return <SendCampaignClient sendingEnabled={sendingEnabled} campaigns={campaigns} leads={leads} />;
+  return <SendCampaignClient campaigns={campaigns} leads={leads} />;
 }
