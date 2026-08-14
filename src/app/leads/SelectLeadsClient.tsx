@@ -239,7 +239,7 @@ export default function SelectLeadsClient() {
                   }}
                 >
                   <td style={{ padding: "10px 0 10px 8px" }}>
-                    <input type="checkbox" checked={isSelected} onChange={() => toggle(lead.id)} onClick={(e) => e.stopPropagation()} />
+                    <input type="checkbox" checked={isSelected} readOnly style={{ pointerEvents: "none" }} />
                   </td>
                   <td style={{ color: colors.ink }}>{lead.phoneE164}</td>
                   <td style={{ color: colors.body }}>{lead.name ?? "—"}</td>
