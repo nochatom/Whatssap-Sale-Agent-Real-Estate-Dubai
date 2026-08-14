@@ -26,7 +26,8 @@ export interface SendOutboundPayload {
    * Template name comes from campaign.templateName (database config, not
    * invented here). Template language comes from WHATSAPP_TEMPLATE_LANGUAGE
    * (environment config) — if unset, this throws rather than guessing a
-   * language. No variable/component substitution is supported yet.
+   * language. The template's single body variable ({{1}}) is filled with
+   * the lead's name, falling back to "there" when the lead has none.
    */
   isTemplate?: boolean;
 }
@@ -110,6 +111,7 @@ export async function sendOutbound(payload: SendOutboundPayload): Promise<SendOu
       accessToken,
       templateName: campaign.templateName,
       templateLanguage,
+      bodyParams: [lead.name ?? "there"],
     });
     persistedBody = null;
     persistedType = "template";

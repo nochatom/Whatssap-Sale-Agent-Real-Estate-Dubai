@@ -59,11 +59,11 @@ export async function sendMessage(params: SendTextMessageParams): Promise<SendMe
 }
 
 /**
- * Minimum viable template send — name + language only, no variable
- * components. Same SENDING_ENABLED hard stop as sendMessage. Callers are
- * responsible for confirming the template is Meta-approved before calling
- * this (see compliance/checks.ts#checkTemplateApproval) — this function does
- * not check approval status itself, it only sends.
+ * Template send, with optional body variable substitution via bodyParams.
+ * Same SENDING_ENABLED hard stop as sendMessage. Callers are responsible for
+ * confirming the template is Meta-approved before calling this (see
+ * compliance/checks.ts#checkTemplateApproval) — this function does not check
+ * approval status itself, it only sends.
  */
 export async function sendTemplateMessage(
   params: SendTemplateMessageParams,
@@ -76,6 +76,16 @@ export async function sendTemplateMessage(
     template: {
       name: params.templateName,
       language: { code: params.templateLanguage },
+      ...(params.bodyParams && params.bodyParams.length > 0
+        ? {
+            components: [
+              {
+                type: "body",
+                parameters: params.bodyParams.map((text) => ({ type: "text", text })),
+              },
+            ],
+          }
+        : {}),
     },
   });
 }

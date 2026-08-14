@@ -6,9 +6,9 @@ export interface SendTextMessageParams {
 }
 
 /**
- * Minimum viable template send: name + language only, no component/variable
- * substitution. If an approved template needs variables, that's not
- * supported yet — see the Phase 2 report.
+ * Template send with optional body variable substitution. bodyParams maps
+ * positionally to the template's {{1}}, {{2}}, ... placeholders — omit for
+ * a template with no variables.
  */
 export interface SendTemplateMessageParams {
   to: string;
@@ -16,6 +16,7 @@ export interface SendTemplateMessageParams {
   accessToken: string;
   templateName: string;
   templateLanguage: string;
+  bodyParams?: string[];
 }
 
 export interface SendMessageResult {
