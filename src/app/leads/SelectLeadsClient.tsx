@@ -95,7 +95,11 @@ export default function SelectLeadsClient() {
     const ids = Array.from(selected);
     if (ids.length === 0) return;
     const label = ids.length === 1 ? (leads.find((l) => l.id === ids[0])?.phoneE164 ?? "this lead") : `these ${ids.length} leads`;
-    if (!window.confirm(`Delete ${label}? This can't be undone.`)) return;
+    const confirmMessage =
+      `Permanently delete ${label}?\n\n` +
+      `This will also permanently delete their conversation history — messages, follow-ups, and AI decisions.\n\n` +
+      `This cannot be undone.`;
+    if (!window.confirm(confirmMessage)) return;
 
     setDeleting(true);
     setError(null);

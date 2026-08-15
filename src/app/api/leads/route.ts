@@ -97,12 +97,15 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * Deletes a single Lead. No cascade — Lead's relations (Conversation, and
- * transitively Message/AiDecision/FollowUp) have no onDelete configured
- * in the schema, so a lead with real conversation history fails at the
- * database (P2003) rather than silently deleting that history. That's
- * surfaced as a clear error, not worked around — this endpoint only ever
- * deletes the Lead row itself, nothing else.
+ * Deletes a Lead and, explicitly, all of its conversation history —
+ * FollowUp, AiDecision, Message, Asset, Conversation — before the Lead row
+ * itself, in FK-safe child-to-parent order. Per explicit product decision,
+ * this is no longer blocked by real history (the prior P2003-based refusal
+ * is gone); the UI is responsible for confirming with the user before
+ * calling this, since it's now genuinely destructive and irreversible.
+ * Wrapped in a transaction so a failure partway through never leaves
+ * orphaned rows — either the whole lead + its history is gone, or nothing
+ * is.
  */
 export async function DELETE(request: NextRequest) {
   const id = request.nextUrl.searchParams.get("id");
@@ -111,18 +114,17 @@ export async function DELETE(request: NextRequest) {
   }
 
   try {
-    await prisma.lead.delete({ where: { id } });
+    await prisma.$transaction([
+      prisma.followUp.deleteMany({ where: { leadId: id } }),
+      prisma.aiDecision.deleteMany({ where: { conversation: { leadId: id } } }),
+      prisma.message.deleteMany({ where: { conversation: { leadId: id } } }),
+      prisma.asset.deleteMany({ where: { leadId: id } }),
+      prisma.conversation.deleteMany({ where: { leadId: id } }),
+      prisma.lead.delete({ where: { id } }),
+    ]);
   } catch (err) {
-    if (err instanceof Prisma.PrismaClientKnownRequestError) {
-      if (err.code === "P2025") {
-        return NextResponse.json({ error: "Lead not found" }, { status: 404 });
-      }
-      if (err.code === "P2003") {
-        return NextResponse.json(
-          { error: "Can't delete — this lead has conversation history (messages, follow-ups, or AI decisions) linked to it." },
-          { status: 409 },
-        );
-      }
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") {
+      return NextResponse.json({ error: "Lead not found" }, { status: 404 });
     }
     throw err;
   }
