@@ -24,8 +24,8 @@ const NAV: NavItem[] = [
   { label: "Leads", href: "/leads", icon: Users },
   { label: "CSV Import", href: "/leads/import", icon: FileUp },
   { label: "Campaigns", href: "/campaigns", icon: Megaphone },
-  { label: "Conversations", href: "/conversations", icon: MessagesSquare },
   { label: "Send", href: "/leads/send", icon: Send },
+  { label: "Conversations", href: "/conversations", icon: MessagesSquare },
 ];
 
 /**
