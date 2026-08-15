@@ -20,7 +20,7 @@
   --color-on-primary: #04140d; /* near-black-green — ~9.8:1 on primary (white would fail on this bright a green) */
   --color-ink: #ffffff;
   --color-body: #d1fae5; /* emerald-100 — ~16.3:1 on canvas */
-  --color-muted: #10b981; /* emerald-500 — ~7.3:1 on canvas */
+  --color-muted: #6b9080; /* desaturated sage — ~5.2:1 on canvas, recedes behind ink/primary instead of competing as another vivid green */
   --color-canvas: #051710;
   --color-canvas-elevated: #0a231b;
   --color-hairline: rgba(16, 185, 129, 0.25); /* emerald-500 @ 25% — translucent border, matches mockup's border-emerald-800/30 pattern */

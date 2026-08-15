@@ -111,12 +111,15 @@ export default async function DashboardPage() {
         })}
       </div>
 
-      <div style={{ display: "grid", gap: space.sm, gridTemplateColumns: "2fr 1fr", alignItems: "start" }}>
+      {/* flex + flexWrap, not a fixed CSS Grid ratio — the same pattern the
+          Inbox's list/thread panes already use, so this stacks to a single
+          column on narrow viewports instead of the two columns overlapping. */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: space.sm, alignItems: "flex-start" }}>
         {/* Left: campaign + conversations */}
-        <div style={{ display: "flex", flexDirection: "column", gap: space.sm, minWidth: 0 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: space.sm, flex: "2 1 480px", minWidth: 0 }}>
           <section style={sectionStyle}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: space.xs }}>
-              <div>
+            <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 6, marginBottom: space.xs }}>
+              <div style={{ minWidth: 0 }}>
                 <h2 style={{ fontSize: 15, fontWeight: 600, margin: 0 }}>Active Campaigns</h2>
                 <p style={{ fontSize: 11, color: colors.mutedText, margin: "2px 0 0" }}>Live broadcasts running on Meta Cloud API</p>
               </div>
@@ -161,7 +164,7 @@ export default async function DashboardPage() {
           </section>
 
           <section style={sectionStyle}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: space.xs }}>
+            <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 6, marginBottom: space.xs }}>
               <h2 style={{ fontSize: 15, fontWeight: 600, margin: 0 }}>Conversations In Progress</h2>
               <Link href="/conversations" style={{ fontSize: 12, color: colors.primary, textDecoration: "none" }}>
                 Open Inbox
@@ -179,6 +182,7 @@ export default async function DashboardPage() {
                       key={conv.id}
                       style={{
                         display: "flex",
+                        flexWrap: "wrap",
                         alignItems: "center",
                         justifyContent: "space-between",
                         padding: "10px 12px",
@@ -226,7 +230,7 @@ export default async function DashboardPage() {
         </div>
 
         {/* Right: activity + follow-ups */}
-        <section style={{ ...sectionStyle, display: "flex", flexDirection: "column", minWidth: 0 }}>
+        <section style={{ ...sectionStyle, display: "flex", flexDirection: "column", flex: "1 1 320px", minWidth: 0 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: space.xs }}>
             <h2 style={{ fontSize: 15, fontWeight: 600, margin: 0 }}>Live Activity</h2>
             <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: colors.primary, fontWeight: 600 }}>
