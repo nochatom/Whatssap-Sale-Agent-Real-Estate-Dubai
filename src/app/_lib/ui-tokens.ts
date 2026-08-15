@@ -7,17 +7,11 @@ import type { CSSProperties } from "react";
  * globals.css (`:root` for dark, `[data-theme="light"]` for light), so a
  * theme switch (see ThemeToggle) needs no re-render of server components.
  *
- * Dark values trace to DESIGN.md (linear.app template) — near-black canvas,
- * one lavender accent, actually-rounded corners (rounded.md/8px, the
- * opposite of the prior Ferrari theme's sharp 0px). Two things are NOT
- * sourced from the file, flagged rather than presented as if they were:
- * `semanticWarning` (the file has no error/warning color at all — its own
- * Known Gaps section says so) and the entire light theme (DESIGN.md
- * explicitly states Linear's real site ships no light mode — "Don't ship a
- * light-mode marketing page"). The light values in globals.css are a
- * standard, WCAG-AA-checked construction anchored on Linear's own
- * documented `inverse-canvas`/`inverse-ink` tokens (white/black), not
- * extracted from anywhere in the file.
+ * Dark values are the emerald identity adopted 2026-08-15 (see the header
+ * comment in globals.css for the full rationale and contrast checks) —
+ * near-black green canvas, one emerald accent, same rounded-corner system
+ * as before. The light theme keeps its original neutral construction; only
+ * the accent-bearing tokens were recolored to match.
  */
 export const colors = {
   primary: "var(--color-primary)",

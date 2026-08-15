@@ -39,7 +39,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           color: colors.ink,
         }}
       >
-        <Sidebar />
+        <Sidebar sendingEnabled={process.env.SENDING_ENABLED === "true"} />
         <div style={{ flex: 1, minWidth: 0 }}>{children}</div>
       </body>
     </html>

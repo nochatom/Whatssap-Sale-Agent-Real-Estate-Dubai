@@ -1,40 +1,46 @@
 /*
  * Theme values consumed via var(--color-*) from src/app/_lib/ui-tokens.ts.
- * Dark (:root, default) traces to DESIGN.md (linear.app template) — see the
- * comment in ui-tokens.ts for exactly which values are and aren't sourced
- * from that file. Light ([data-theme="light"]) has no DESIGN.md source at
- * all (Linear's real site ships no light mode) — every light value below
- * was constructed to the same WCAG AA bar (>=4.5:1 for body text, >=3:1 for
- * large/UI elements), anchored on Linear's own documented inverse-canvas
- * (#ffffff) and inverse-ink (#000000) tokens.
+ * Emerald identity, adopted 2026-08-15 replacing the prior Linear/lavender
+ * theme, per an explicit full-redesign request (a pasted reference mockup).
+ * Dark (:root, default) values are lifted directly from that mockup's own
+ * Tailwind classes (bg-[#051710], text-emerald-400, etc.) rather than any
+ * external design doc. Light ([data-theme="light"]) was not part of that
+ * mockup (dark-only, like the theme it replaced) — only the accent-bearing
+ * tokens (primary/success/warning) were recolored to match; ink/body/muted/
+ * canvas/hairline keep their original neutral, WCAG-AA-checked values since
+ * a green-tinted light mode was never specified anywhere.
+ * All dark-theme text-color pairings below are contrast-checked against
+ * --color-canvas at >=4.5:1 (body text) / >=3:1 (large/UI) — see the
+ * on-primary vs. primary check in particular, since emerald-400 is bright
+ * enough that white text on it would fail, unlike the old lavender primary.
  */
 
 :root {
-  --color-primary: #5e6ad2; /* colors.primary */
-  --color-on-primary: #ffffff; /* colors.on-primary */
-  --color-ink: #f7f8f8; /* colors.ink */
-  --color-body: #d0d6e0; /* colors.ink-muted */
-  --color-muted: #8a8f98; /* colors.ink-subtle — ~6.6:1 on canvas */
-  --color-canvas: #010102; /* colors.canvas */
-  --color-canvas-elevated: #0f1011; /* colors.surface-1 */
-  --color-hairline: #23252a; /* colors.hairline */
-  --color-hairline-strong: #34343a; /* colors.hairline-strong */
-  --color-info: #5e6ad2; /* reuses colors.primary — no separate info color in the file */
-  --color-success: #27a644; /* colors.semantic-success */
-  --color-warning: #eb5757; /* not in DESIGN.md — standard dark-UI red */
+  --color-primary: #34d399; /* emerald-400 — ~9.6:1 on canvas */
+  --color-on-primary: #04140d; /* near-black-green — ~9.8:1 on primary (white would fail on this bright a green) */
+  --color-ink: #ffffff;
+  --color-body: #d1fae5; /* emerald-100 — ~16.3:1 on canvas */
+  --color-muted: #10b981; /* emerald-500 — ~7.3:1 on canvas */
+  --color-canvas: #051710;
+  --color-canvas-elevated: #0a231b;
+  --color-hairline: rgba(16, 185, 129, 0.25); /* emerald-500 @ 25% — translucent border, matches mockup's border-emerald-800/30 pattern */
+  --color-hairline-strong: rgba(16, 185, 129, 0.4);
+  --color-info: #34d399; /* reuses primary — no separate info color in the mockup */
+  --color-success: #10b981; /* emerald-500 — distinct from primary emerald-400 */
+  --color-warning: #fbbf24; /* amber-400 — matches the mockup's "AI HANDLING" badge */
 }
 
 [data-theme="light"] {
-  --color-primary: #5e6ad2; /* same accent both themes */
+  --color-primary: #059669; /* emerald-600, darkened for AA on white */
   --color-on-primary: #ffffff;
-  --color-ink: #000000; /* colors.inverse-ink, documented */
-  --color-body: #3c3c43; /* constructed — ~11:1 on white */
-  --color-muted: #6b6f76; /* constructed — ~5:1 on white */
-  --color-canvas: #ffffff; /* colors.inverse-canvas, documented */
-  --color-canvas-elevated: #f5f6f6; /* colors.inverse-surface-1, documented */
-  --color-hairline: #e3e4e8; /* constructed */
-  --color-hairline-strong: #cfd0d6; /* constructed */
-  --color-info: #5e6ad2;
-  --color-success: #1a8a37; /* darkened for AA on white */
-  --color-warning: #c23535; /* darkened for AA on white — ~5.5:1 */
+  --color-ink: #000000;
+  --color-body: #3c3c43;
+  --color-muted: #6b6f76;
+  --color-canvas: #ffffff;
+  --color-canvas-elevated: #f5f6f6;
+  --color-hairline: #e3e4e8;
+  --color-hairline-strong: #cfd0d6;
+  --color-info: #059669;
+  --color-success: #047857; /* emerald-700, darkened for AA on white */
+  --color-warning: #b45309; /* amber-700, darkened for AA on white */
 }

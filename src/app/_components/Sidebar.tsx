@@ -33,7 +33,7 @@ const NAV: NavItem[] = [
  * state — correct on direct load, refresh, and back/forward, not just
  * after a click in this session.
  */
-export default function Sidebar() {
+export default function Sidebar({ sendingEnabled }: { sendingEnabled: boolean }) {
   const pathname = usePathname();
 
   return (
@@ -115,6 +115,43 @@ export default function Sidebar() {
           );
         })}
       </nav>
+
+      {/* Real status, not decorative — reflects the actual SENDING_ENABLED
+          value that gates every outbound WhatsApp send in this app (see
+          src/whatsapp/transport.ts#assertSendingEnabled), passed down from
+          the server-rendered layout. */}
+      <div
+        style={{
+          padding: "10px 12px",
+          borderRadius: 10,
+          background: colors.canvasElevated,
+          border: `1px solid ${colors.hairline}`,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          fontSize: 12,
+          marginTop: space.xs,
+        }}
+      >
+        <span style={{ display: "flex", alignItems: "center", gap: 8, color: colors.body, fontWeight: 500 }}>
+          {/* Filled = live, hollow = off — a shape distinction, not just hue,
+              since mutedText is also a green in this theme and wouldn't
+              otherwise read as clearly "off" next to the live-green dot. */}
+          <span
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: 9999,
+              background: sendingEnabled ? colors.primary : "transparent",
+              border: sendingEnabled ? "none" : `1.5px solid ${colors.mutedText}`,
+            }}
+          />
+          Meta Cloud API
+        </span>
+        <span style={{ fontSize: 10, fontFamily: "monospace", fontWeight: 700, color: sendingEnabled ? colors.primary : colors.mutedText }}>
+          {sendingEnabled ? "LIVE" : "OFF"}
+        </span>
+      </div>
 
       <div style={{ borderTop: `1px solid ${colors.hairline}`, paddingTop: space.xs, marginTop: space.xs, display: "flex", gap: 8 }}>
         {/* Plain icon, no unread badge — no read/unread tracking exists in

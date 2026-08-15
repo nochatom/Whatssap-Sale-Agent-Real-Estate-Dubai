@@ -197,7 +197,13 @@ export default function SelectLeadsClient() {
               style={{
                 ...buttonStyle("outline", selected.size === 0 || deleting, true),
                 color: colors.semanticWarning,
-                borderColor: colors.semanticWarning,
+                // Full border shorthand, not borderColor — buttonStyle's own
+                // "outline" variant already sets border as a shorthand
+                // string, and mixing shorthand + non-shorthand for the same
+                // property triggers a React dev warning ("Updating a style
+                // property during rerender... don't mix shorthand and
+                // non-shorthand") every time `disabled` toggles.
+                border: `1px solid ${selected.size === 0 || deleting ? colors.hairline : colors.semanticWarning}`,
               }}
             >
               {deleting ? "Deleting…" : "Delete"}
