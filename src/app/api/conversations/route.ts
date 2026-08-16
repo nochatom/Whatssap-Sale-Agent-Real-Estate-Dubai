@@ -16,7 +16,7 @@ export async function GET() {
     include: {
       lead: { select: { phoneE164: true, name: true } },
       campaign: { select: { name: true } },
-      messages: { orderBy: { createdAt: "desc" }, take: 1, select: { body: true, type: true } },
+      messages: { orderBy: { createdAt: "desc" }, take: 1, select: { body: true, type: true, status: true } },
     },
   });
 
@@ -28,9 +28,13 @@ export async function GET() {
       campaign: conv.campaign,
       status: deriveConversationStatus(conv.lastInboundAt, conv.lastOutboundAt),
       lastMessage: last ? (last.body ?? `[${last.type}]`) : null,
+      lastMessageStatus: last?.status ?? null,
       lastInboundAt: conv.lastInboundAt,
       lastOutboundAt: conv.lastOutboundAt,
       updatedAt: conv.updatedAt,
+      // Unread: there's a real inbound message the user hasn't opened this
+      // conversation since (readAt unset, or set before that inbound arrived).
+      isUnread: !!conv.lastInboundAt && (!conv.readAt || conv.readAt < conv.lastInboundAt),
     };
   });
 

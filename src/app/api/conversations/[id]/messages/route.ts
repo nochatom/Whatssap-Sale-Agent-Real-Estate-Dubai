@@ -33,6 +33,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       status: deriveConversationStatus(conversation.lastInboundAt, conversation.lastOutboundAt),
       lastInboundAt: conversation.lastInboundAt,
       lastOutboundAt: conversation.lastOutboundAt,
+      readAt: conversation.readAt,
     },
     messages: conversation.messages.map((m) => ({
       id: m.id,
@@ -40,6 +41,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       body: m.body,
       type: m.type,
       templateName: m.templateName,
+      mediaId: m.mediaId,
+      mimeType: m.mimeType,
       status: m.status,
       createdAt: m.createdAt,
     })),

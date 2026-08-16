@@ -31,3 +31,15 @@ export function buildReplyIdempotencyKey(
 export function buildFollowUpIdempotencyKey(followUpId: string): string {
   return `out:followup:${followUpId}`;
 }
+
+/**
+ * Manual reply from the Inbox — unlike the AI reply (keyed off the inbound
+ * message that triggered it) there's no triggering event to key off, so
+ * this uses a fresh id per send. Real double-submit protection is the
+ * client disabling the Send button while a request is in flight, not this
+ * key — this only guarantees Message.idempotencyKey's uniqueness constraint
+ * is satisfiable.
+ */
+export function buildManualReplyIdempotencyKey(conversationId: string): string {
+  return `out:manual:${conversationId}:${crypto.randomUUID()}`;
+}

@@ -3,7 +3,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { buildInboundIdempotencyKey } from "@/whatsapp/idempotency";
 import { verifyWebhookSignature, verifyWebhookSubscription } from "@/whatsapp/transport";
-import { extractInboundMessage, type WhatsAppWebhookPayload } from "@/whatsapp/webhook-payload";
+import { extractInboundMessage, extractStatusUpdates, type WhatsAppWebhookPayload } from "@/whatsapp/webhook-payload";
+import type { MessageStatus } from "@prisma/client";
 import { normalizePhoneToE164 } from "@/csv/phone";
 import { handleInboundTask } from "@trigger/handle-inbound";
 
@@ -19,6 +20,42 @@ export async function GET(request: NextRequest) {
   }
 
   return new NextResponse(challenge, { status: 200 });
+}
+
+// Meta's lowercase status string -> our MessageStatus enum. Unrecognized
+// values (Meta occasionally adds new ones) are skipped, never guessed.
+const META_STATUS_MAP: Record<string, MessageStatus> = {
+  sent: "SENT",
+  delivered: "DELIVERED",
+  read: "READ",
+  failed: "FAILED",
+};
+
+// Guards against out-of-order webhook delivery (a real, documented Meta
+// behavior) regressing a message from e.g. READ back down to DELIVERED.
+const STATUS_RANK: Partial<Record<MessageStatus, number>> = {
+  QUEUED: 0,
+  SENT: 1,
+  FAILED: 1,
+  DELIVERED: 2,
+  READ: 3,
+};
+
+async function applyStatusUpdates(payload: WhatsAppWebhookPayload): Promise<void> {
+  const updates = extractStatusUpdates(payload);
+  for (const update of updates) {
+    const nextStatus = META_STATUS_MAP[update.status];
+    if (!nextStatus) continue; // unrecognized Meta status — don't invent one
+
+    const message = await prisma.message.findUnique({ where: { waMessageId: update.waMessageId } });
+    if (!message) continue; // status for a message we don't have (e.g. pre-dates this deployment)
+
+    const currentRank = STATUS_RANK[message.status] ?? -1;
+    const nextRank = STATUS_RANK[nextStatus] ?? -1;
+    if (nextRank <= currentRank) continue;
+
+    await prisma.message.update({ where: { id: message.id }, data: { status: nextStatus } });
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -39,7 +76,9 @@ export async function POST(request: NextRequest) {
 
   const inbound = extractInboundMessage(payload);
   if (!inbound) {
-    // Status update or a change type we don't act on — ack fast, nothing to persist.
+    // No inbound message in this payload — could be a delivery/read/failed
+    // status update instead, so check for that before acking with nothing done.
+    await applyStatusUpdates(payload);
     return new NextResponse("OK", { status: 200 });
   }
 
@@ -74,6 +113,8 @@ export async function POST(request: NextRequest) {
       idempotencyKey,
       type: inbound.type,
       body: inbound.text ?? null,
+      mediaId: inbound.mediaId ?? null,
+      mimeType: inbound.mimeType ?? null,
       status: "RECEIVED",
     },
   });

@@ -109,6 +109,11 @@ model Conversation {
   /// reply from — Campaign.senderPhoneNumberId is the only other source of
   /// that, and organic conversations have no Campaign.
   senderPhoneNumberId String?
+  /// Set when the user explicitly marks this conversation as read, or
+  /// implicitly when they open it in the Inbox. Null means unread. Compared
+  /// against lastInboundAt (real, existing field) to derive read/unread —
+  /// not a re-implementation of that signal, just the missing other half of it.
+  readAt        DateTime?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -131,6 +136,11 @@ model Message {
   type            String
   body            String?
   templateName    String?
+  /// Meta media ID for image/document/audio/video messages (the "id" field
+  /// in the webhook's image/document/etc. object) — not a URL, Meta's media
+  /// URLs expire in minutes. Fetched on demand via the media proxy route.
+  mediaId         String?
+  mimeType        String?
   status          MessageStatus
   createdAt       DateTime         @default(now())
 

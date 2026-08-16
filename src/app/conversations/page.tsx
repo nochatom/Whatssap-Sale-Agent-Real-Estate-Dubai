@@ -22,7 +22,7 @@ export default async function ConversationsPage() {
     include: {
       lead: { select: { phoneE164: true, name: true } },
       campaign: { select: { name: true } },
-      messages: { orderBy: { createdAt: "desc" }, take: 1, select: { body: true, type: true } },
+      messages: { orderBy: { createdAt: "desc" }, take: 1, select: { body: true, type: true, status: true } },
     },
   });
 
@@ -34,9 +34,11 @@ export default async function ConversationsPage() {
       campaign: conv.campaign,
       status: deriveConversationStatus(conv.lastInboundAt, conv.lastOutboundAt),
       lastMessage: last ? (last.body ?? `[${last.type}]`) : null,
+      lastMessageStatus: last?.status ?? null,
       lastInboundAt: conv.lastInboundAt ? conv.lastInboundAt.toISOString() : null,
       lastOutboundAt: conv.lastOutboundAt ? conv.lastOutboundAt.toISOString() : null,
       updatedAt: conv.updatedAt.toISOString(),
+      isUnread: !!conv.lastInboundAt && (!conv.readAt || conv.readAt < conv.lastInboundAt),
     };
   });
 
