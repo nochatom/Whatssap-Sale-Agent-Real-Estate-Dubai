@@ -141,13 +141,25 @@ model Message {
   /// URLs expire in minutes. Fetched on demand via the media proxy route.
   mediaId         String?
   mimeType        String?
+  /// Real filename only — Meta's document webhook payload for inbound, or
+  /// the uploaded File's own name for outbound. Never invented for a
+  /// message that predates this field (renders a generic type-based label
+  /// instead, not a fake name).
+  filename        String?
+  /// Meta's `context.id` — the waMessageId this message is a quoted reply
+  /// to, resolved to our own Message.id. Nullable, SetNull on delete so
+  /// removing the original message doesn't cascade-delete replies to it.
+  replyToMessageId String?
   status          MessageStatus
   createdAt       DateTime         @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id])
   aiDecisions  AiDecision[]
+  replyTo      Message?     @relation("MessageReplyTo", fields: [replyToMessageId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  replies      Message[]    @relation("MessageReplyTo")
 
   @@index([conversationId])
+  @@index([replyToMessageId])
 }
 
 model AiDecision {

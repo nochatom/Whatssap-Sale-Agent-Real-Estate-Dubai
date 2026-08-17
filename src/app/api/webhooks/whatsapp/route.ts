@@ -115,6 +115,7 @@ export async function POST(request: NextRequest) {
       body: inbound.text ?? null,
       mediaId: inbound.mediaId ?? null,
       mimeType: inbound.mimeType ?? null,
+      filename: inbound.filename ?? null,
       status: "RECEIVED",
     },
   });

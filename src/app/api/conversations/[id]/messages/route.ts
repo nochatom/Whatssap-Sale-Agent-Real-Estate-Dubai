@@ -43,6 +43,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       templateName: m.templateName,
       mediaId: m.mediaId,
       mimeType: m.mimeType,
+      filename: m.filename,
+      replyToMessageId: m.replyToMessageId,
       status: m.status,
       createdAt: m.createdAt,
     })),

@@ -1,6 +1,8 @@
 interface WhatsAppWebhookMedia {
   id: string;
   mime_type?: string;
+  /** Only ever present on Meta's document object — real user-supplied filename, never present for image/audio/video/sticker. */
+  filename?: string;
 }
 
 interface WhatsAppWebhookMessage {
@@ -53,6 +55,8 @@ export interface ParsedInboundMessage {
   text?: string;
   mediaId?: string;
   mimeType?: string;
+  /** Real filename from Meta's document object — undefined for every other media type, never invented. */
+  filename?: string;
   /**
    * The receiving WhatsApp Business phone_number_id from the webhook's
    * metadata block — which of the business's numbers this message arrived
@@ -100,6 +104,7 @@ export function extractInboundMessage(payload: WhatsAppWebhookPayload): ParsedIn
     text: message.type === "text" ? message.text?.body : undefined,
     mediaId: media?.id,
     mimeType: media?.mime_type,
+    filename: media?.filename,
     receivingPhoneNumberId: value?.metadata?.phone_number_id,
   };
 }

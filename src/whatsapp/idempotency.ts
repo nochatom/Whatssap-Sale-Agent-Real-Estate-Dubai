@@ -34,12 +34,14 @@ export function buildFollowUpIdempotencyKey(followUpId: string): string {
 
 /**
  * Manual reply from the Inbox — unlike the AI reply (keyed off the inbound
- * message that triggered it) there's no triggering event to key off, so
- * this uses a fresh id per send. Real double-submit protection is the
- * client disabling the Send button while a request is in flight, not this
- * key — this only guarantees Message.idempotencyKey's uniqueness constraint
- * is satisfiable.
+ * message that triggered it) there's no server-side triggering event to key
+ * off, so the client supplies a stable clientMessageId (generated once per
+ * composer send, reused verbatim on Retry). This is what makes Retry safe:
+ * a retried send after a genuine failure reuses the exact same key, so if
+ * the original attempt actually succeeded server-side despite the client
+ * never seeing the response, the DB's idempotencyKey uniqueness constraint
+ * turns the retry into a no-op instead of a duplicate Message row.
  */
-export function buildManualReplyIdempotencyKey(conversationId: string): string {
-  return `out:manual:${conversationId}:${crypto.randomUUID()}`;
+export function buildManualReplyIdempotencyKey(conversationId: string, clientMessageId: string): string {
+  return `out:manual:${conversationId}:${clientMessageId}`;
 }

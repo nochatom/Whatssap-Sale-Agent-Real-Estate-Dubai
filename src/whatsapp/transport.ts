@@ -1,9 +1,12 @@
 import crypto from "node:crypto";
 
 import type {
+  SendMediaMessageParams,
   SendMessageResult,
   SendTemplateMessageParams,
   SendTextMessageParams,
+  UploadMediaParams,
+  UploadMediaResult,
 } from "./types";
 
 const GRAPH_API_BASE = "https://graph.facebook.com/v21.0";
@@ -47,6 +50,10 @@ async function postToGraphApi(
  * Phase 1 hard stop: no outbound message may ever be sent. SENDING_ENABLED is
  * never set to "true" in any committed file — this only reads the runtime
  * environment, it never defines the variable.
+ *
+ * contextMessageId is optional and additive — existing callers (Campaign
+ * opener's free-text path, AI reply, follow-up) never pass it, so their
+ * request body is byte-identical to before this field existed.
  */
 export async function sendMessage(params: SendTextMessageParams): Promise<SendMessageResult> {
   assertSendingEnabled();
@@ -55,7 +62,60 @@ export async function sendMessage(params: SendTextMessageParams): Promise<SendMe
     to: params.to,
     type: "text",
     text: { body: params.body },
+    ...(params.contextMessageId ? { context: { message_id: params.contextMessageId } } : {}),
   });
+}
+
+/**
+ * Sends a message referencing media already uploaded to Meta via
+ * uploadMedia() below — never raw bytes in this call. Same SENDING_ENABLED
+ * hard stop as sendMessage/sendTemplateMessage. Purely additive: does not
+ * change either of those two existing functions.
+ */
+export async function sendMediaMessage(params: SendMediaMessageParams): Promise<SendMessageResult> {
+  assertSendingEnabled();
+  const mediaObject: Record<string, unknown> = { id: params.mediaId };
+  if (params.caption) mediaObject.caption = params.caption;
+  if (params.kind === "document" && params.filename) mediaObject.filename = params.filename;
+
+  return postToGraphApi(params.phoneNumberId, params.accessToken, {
+    messaging_product: "whatsapp",
+    to: params.to,
+    type: params.kind,
+    [params.kind]: mediaObject,
+    ...(params.contextMessageId ? { context: { message_id: params.contextMessageId } } : {}),
+  });
+}
+
+/**
+ * Uploads a file's bytes to Meta's /media endpoint, returning a media id
+ * that sendMediaMessage() can then reference. Deliberately NOT gated by
+ * assertSendingEnabled() — uploading bytes to Meta's storage doesn't reach
+ * a customer by itself; the actual send (sendMediaMessage) still is gated,
+ * so in test/dev mode (SENDING_ENABLED unset) an upload can succeed while
+ * the subsequent send correctly refuses, same as every other send path.
+ */
+export async function uploadMedia(params: UploadMediaParams): Promise<UploadMediaResult> {
+  const form = new FormData();
+  form.append("messaging_product", "whatsapp");
+  form.append("file", params.file, params.filename);
+
+  const response = await fetch(`${GRAPH_API_BASE}/${params.phoneNumberId}/media`, {
+    method: "POST",
+    headers: { Authorization: `${AUTH_SCHEME} ${params.accessToken}` },
+    body: form,
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`WhatsApp media upload failed (${response.status}): ${errorBody}`);
+  }
+
+  const json = (await response.json()) as { id?: string };
+  if (!json.id) {
+    throw new Error("WhatsApp media upload response missing id");
+  }
+  return { mediaId: json.id };
 }
 
 /**
