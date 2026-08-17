@@ -114,6 +114,10 @@ model Conversation {
   /// against lastInboundAt (real, existing field) to derive read/unread —
   /// not a re-implementation of that signal, just the missing other half of it.
   readAt        DateTime?
+  /// Set when the user archives this conversation, null when active/restored.
+  /// Hides it from the default list only — never touches Lead, Message, or
+  /// any other row. Same soft-flag pattern as readAt.
+  archivedAt    DateTime?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 

@@ -17,6 +17,7 @@ export const dynamic = "force-dynamic";
  */
 export default async function ConversationsPage() {
   const conversations = await prisma.conversation.findMany({
+    where: { archivedAt: null },
     orderBy: { updatedAt: "desc" },
     take: 100,
     include: {
@@ -39,6 +40,7 @@ export default async function ConversationsPage() {
       lastOutboundAt: conv.lastOutboundAt ? conv.lastOutboundAt.toISOString() : null,
       updatedAt: conv.updatedAt.toISOString(),
       isUnread: !!conv.lastInboundAt && (!conv.readAt || conv.readAt < conv.lastInboundAt),
+      archivedAt: null,
     };
   });
 

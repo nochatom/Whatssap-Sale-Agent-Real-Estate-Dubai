@@ -33,13 +33,18 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
 }
 
 interface PatchBody {
-  /** Only supported action right now — set to false to explicitly unmark as read. */
+  /** Set to false to explicitly unmark as read. */
   read?: boolean;
+  /** Set to false to restore a previously archived conversation. */
+  archived?: boolean;
 }
 
 /**
- * Marks a conversation read (readAt = now) or unread (readAt = null). Real
- * new field (Conversation.readAt), not a repurposing of anything existing.
+ * Marks a conversation read (readAt = now) or unread (readAt = null), and/or
+ * archived (archivedAt = now) or restored (archivedAt = null). Both are real
+ * fields (Conversation.readAt, Conversation.archivedAt), not repurposings of
+ * anything existing. Either or both may be set in one call; at least one is
+ * required.
  */
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -51,16 +56,17 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  if (typeof body.read !== "boolean") {
-    return NextResponse.json({ error: "read (boolean) is required" }, { status: 400 });
+  if (typeof body.read !== "boolean" && typeof body.archived !== "boolean") {
+    return NextResponse.json({ error: "read (boolean) and/or archived (boolean) is required" }, { status: 400 });
   }
 
+  const data: { readAt?: Date | null; archivedAt?: Date | null } = {};
+  if (typeof body.read === "boolean") data.readAt = body.read ? new Date() : null;
+  if (typeof body.archived === "boolean") data.archivedAt = body.archived ? new Date() : null;
+
   try {
-    const conversation = await prisma.conversation.update({
-      where: { id },
-      data: { readAt: body.read ? new Date() : null },
-    });
-    return NextResponse.json({ id: conversation.id, readAt: conversation.readAt });
+    const conversation = await prisma.conversation.update({ where: { id }, data });
+    return NextResponse.json({ id: conversation.id, readAt: conversation.readAt, archivedAt: conversation.archivedAt });
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") {
       return NextResponse.json({ error: "Conversation not found" }, { status: 404 });

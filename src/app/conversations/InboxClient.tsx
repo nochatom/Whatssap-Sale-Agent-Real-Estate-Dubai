@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, CheckCheck, AlertCircle, Paperclip, Reply as ReplyIcon, RotateCcw, Loader2, Download, X, FileText, Copy as CopyIcon } from "lucide-react";
+import { Check, CheckCheck, AlertCircle, Paperclip, Reply as ReplyIcon, RotateCcw, Loader2, Download, X, FileText, Copy as CopyIcon, Search, Archive, ArchiveRestore, MailOpen } from "lucide-react";
 
 import Badge from "../_components/Badge";
 import { colors, space, sectionStyle, fieldLabel, fieldInput, buttonStyle } from "../_lib/ui-tokens";
@@ -19,6 +19,7 @@ export interface ConversationSummary {
   lastOutboundAt: string | null;
   updatedAt: string;
   isUnread: boolean;
+  archivedAt: string | null;
 }
 
 type MessageStatusValue = "QUEUED" | "SENT" | "DELIVERED" | "READ" | "FAILED" | "RECEIVED";
@@ -187,20 +188,36 @@ export default function InboxClient({ initialConversations }: { initialConversat
   const [sendingReply, setSendingReply] = useState(false);
   const [expandedImageUrl, setExpandedImageUrl] = useState<string | null>(null);
 
-  // List pane: poll for new/updated conversations.
+  const [searchQuery, setSearchQuery] = useState("");
+  const [view, setView] = useState<"inbox" | "archived">("inbox");
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [archiveBusy, setArchiveBusy] = useState(false);
+
+  // List pane: load on view change, then poll for new/updated conversations.
+  // Search is client-side only (filters the already-fetched list below) —
+  // no new query, no parallel index, same data this pane already has.
   useEffect(() => {
+    let cancelled = false;
+
     async function refreshList() {
       try {
-        const res = await fetch("/api/conversations");
+        const res = await fetch(`/api/conversations${view === "archived" ? "?archived=true" : ""}`);
         const data = await res.json();
-        if (res.ok) setConversations(data.conversations ?? []);
+        if (!cancelled && res.ok) {
+          setConversations(data.conversations ?? []);
+          setUnreadCount(data.unreadCount ?? 0);
+        }
       } catch {
         // Transient network hiccup — next poll retries, nothing to surface here.
       }
     }
+    refreshList();
     const interval = setInterval(refreshList, LIST_POLL_MS);
-    return () => clearInterval(interval);
-  }, []);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [view]);
 
   // Thread pane: load + poll the selected conversation's messages.
   useEffect(() => {
@@ -265,13 +282,19 @@ export default function InboxClient({ initialConversations }: { initialConversat
   }, [selectedId]);
 
   const filteredConversations = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
     return conversations.filter((c) => {
       if (readFilter === "unread" && !c.isUnread) return false;
       if (readFilter === "read" && c.isUnread) return false;
       if (statusFilter !== "all" && c.lastMessageStatus !== statusFilter) return false;
+      if (query) {
+        const nameMatch = c.lead.name?.toLowerCase().includes(query) ?? false;
+        const phoneMatch = c.lead.phoneE164.toLowerCase().includes(query);
+        if (!nameMatch && !phoneMatch) return false;
+      }
       return true;
     });
-  }, [conversations, readFilter, statusFilter]);
+  }, [conversations, readFilter, statusFilter, searchQuery]);
 
   function toggleChecked(id: string) {
     setCheckedIds((prev) => {
@@ -303,11 +326,14 @@ export default function InboxClient({ initialConversations }: { initialConversat
       }
     }
     // Refetch rather than locally reasoning about which of the loop's calls
-    // actually succeeded — simpler and always correct.
+    // actually succeeded — simpler and always correct. Same view as currently open.
     try {
-      const res = await fetch("/api/conversations");
+      const res = await fetch(`/api/conversations${view === "archived" ? "?archived=true" : ""}`);
       const data = await res.json();
-      if (res.ok) setConversations(data.conversations ?? []);
+      if (res.ok) {
+        setConversations(data.conversations ?? []);
+        setUnreadCount(data.unreadCount ?? 0);
+      }
     } catch {
       // next poll will catch up
     }
@@ -317,27 +343,64 @@ export default function InboxClient({ initialConversations }: { initialConversat
     if (failures.length > 0) window.alert(failures.join(" · "));
   }
 
-  async function handleBulkMarkRead() {
-    const ids = Array.from(checkedIds);
-    if (ids.length === 0) return;
-    setBulkBusy(true);
+  async function bulkPatch(ids: string[], body: Record<string, boolean>): Promise<string[]> {
     const failures: string[] = [];
     for (const id of ids) {
       try {
         const res = await fetch(`/api/conversations/${id}`, {
           method: "PATCH",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ read: true }),
+          body: JSON.stringify(body),
         });
-        if (!res.ok) throw new Error("Failed to mark as read");
+        if (!res.ok) throw new Error("Request failed");
       } catch (err) {
         failures.push(err instanceof Error ? err.message : String(err));
       }
     }
+    return failures;
+  }
+
+  async function handleBulkMarkRead() {
+    const ids = Array.from(checkedIds);
+    if (ids.length === 0) return;
+    setBulkBusy(true);
+    const failures = await bulkPatch(ids, { read: true });
     setConversations((prev) => prev.map((c) => (ids.includes(c.id) ? { ...c, isUnread: false } : c)));
+    setUnreadCount((prev) => Math.max(0, prev - ids.filter((id) => conversations.find((c) => c.id === id)?.isUnread).length));
     setCheckedIds(new Set());
     setBulkBusy(false);
     if (failures.length > 0) window.alert(failures.join(" · "));
+  }
+
+  async function handleBulkMarkUnread() {
+    const ids = Array.from(checkedIds);
+    if (ids.length === 0) return;
+    setBulkBusy(true);
+    const failures = await bulkPatch(ids, { read: false });
+    setConversations((prev) => prev.map((c) => (ids.includes(c.id) ? { ...c, isUnread: !!c.lastInboundAt } : c)));
+    setCheckedIds(new Set());
+    setBulkBusy(false);
+    if (failures.length > 0) window.alert(failures.join(" · "));
+  }
+
+  async function handleToggleArchive(conv: ConversationSummary) {
+    const archiving = !conv.archivedAt;
+    setArchiveBusy(true);
+    try {
+      const res = await fetch(`/api/conversations/${conv.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ archived: archiving }),
+      });
+      if (!res.ok) throw new Error("Failed to update conversation");
+      // Whichever way it moved, it no longer belongs in the currently open view.
+      setConversations((prev) => prev.filter((c) => c.id !== conv.id));
+      if (selectedId === conv.id) setSelectedId(null);
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : String(err));
+    } finally {
+      setArchiveBusy(false);
+    }
   }
 
   // Sends one composer submission: appends an optimistic bubble immediately,
@@ -446,6 +509,34 @@ export default function InboxClient({ initialConversations }: { initialConversat
 
   return (
     <div>
+      {/* View toggle + unread badge */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: space.xs, marginBottom: space.xs, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 4 }}>
+          <button
+            onClick={() => { setView("inbox"); setSelectedId(null); setCheckedIds(new Set()); }}
+            style={{ ...buttonStyle(view === "inbox" ? "solid" : "outline", false, true) }}
+          >
+            Inbox{unreadCount > 0 ? ` (${unreadCount})` : ""}
+          </button>
+          <button
+            onClick={() => { setView("archived"); setSelectedId(null); setCheckedIds(new Set()); }}
+            style={{ ...buttonStyle(view === "archived" ? "solid" : "outline", false, true) }}
+          >
+            Archived
+          </button>
+        </div>
+        <label style={{ position: "relative", display: "block" }}>
+          <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: colors.mutedText, pointerEvents: "none" }} />
+          <input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search name or phone…"
+            style={{ ...fieldInput, paddingLeft: 32, width: 220 }}
+            aria-label="Search conversations by name or phone"
+          />
+        </label>
+      </div>
+
       {/* Filters */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: space.xs, alignItems: "flex-end", marginBottom: space.xs }}>
         <label style={{ ...fieldLabel, display: "block" }}>
@@ -496,6 +587,9 @@ export default function InboxClient({ initialConversations }: { initialConversat
           <div style={{ display: "flex", gap: space.xxs }}>
             <button onClick={handleBulkMarkRead} disabled={bulkBusy} style={buttonStyle("outline", bulkBusy, true)}>
               Mark as Read
+            </button>
+            <button onClick={handleBulkMarkUnread} disabled={bulkBusy} style={buttonStyle("outline", bulkBusy, true)}>
+              Mark as Unread
             </button>
             <button
               onClick={handleBulkDelete}
@@ -576,8 +670,20 @@ export default function InboxClient({ initialConversations }: { initialConversat
                         )}
                         {leadLabel(conv.lead)}
                       </span>
-                      <span style={{ flexShrink: 0, fontSize: 11, color: colors.mutedText }}>
-                        {new Date(conv.updatedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                      <span style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+                        <span style={{ fontSize: 11, color: colors.mutedText }}>
+                          {new Date(conv.updatedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); handleToggleArchive(conv); }}
+                          disabled={archiveBusy}
+                          aria-label={conv.archivedAt ? `Restore conversation with ${leadLabel(conv.lead)}` : `Archive conversation with ${leadLabel(conv.lead)}`}
+                          title={conv.archivedAt ? "Restore" : "Archive"}
+                          style={{ display: "flex", alignItems: "center", justifyContent: "center", background: "transparent", border: "none", color: colors.mutedText, cursor: archiveBusy ? "not-allowed" : "pointer", padding: 0 }}
+                        >
+                          {conv.archivedAt ? <ArchiveRestore size={13} /> : <Archive size={13} />}
+                        </button>
                       </span>
                     </div>
                     <p
@@ -619,6 +725,19 @@ export default function InboxClient({ initialConversations }: { initialConversat
                 <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                   {detail.campaign ? <Badge tone="neutral">{detail.campaign.name}</Badge> : <Badge tone="neutral">Organic</Badge>}
                   <Badge tone={CONVERSATION_STATUS_DISPLAY[detail.status].tone}>{CONVERSATION_STATUS_DISPLAY[detail.status].label}</Badge>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const failures = await bulkPatch([selectedId as string], { read: false });
+                      if (failures.length > 0) { window.alert(failures[0]); return; }
+                      setConversations((prev) => prev.map((c) => (c.id === selectedId ? { ...c, isUnread: !!c.lastInboundAt } : c)));
+                    }}
+                    aria-label="Mark as unread"
+                    title="Mark as unread"
+                    style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 26, height: 26, background: "transparent", border: `1px solid ${colors.hairline}`, borderRadius: 6, color: colors.mutedText, cursor: "pointer" }}
+                  >
+                    <MailOpen size={13} />
+                  </button>
                 </div>
               </div>
 
