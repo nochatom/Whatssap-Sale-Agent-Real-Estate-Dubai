@@ -49,3 +49,31 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({ businessId, wabaJson, wabaResults });
 }
+
+/**
+ * TEMPORARY: subscribes this app (whichever app WHATSAPP_ACCESS_TOKEN
+ * belongs to) to receive webhook events for the given WABA (?wabaId=).
+ * Additive only — POST /subscribed_apps does not remove any other app's
+ * existing subscription on the same WABA.
+ */
+export async function POST(request: NextRequest) {
+  const token = process.env.WHATSAPP_ACCESS_TOKEN;
+  const wabaId = request.nextUrl.searchParams.get("wabaId");
+
+  if (!token || !wabaId) {
+    return NextResponse.json({ error: "Missing WHATSAPP_ACCESS_TOKEN or wabaId" }, { status: 500 });
+  }
+
+  const subscribeRes = await fetch(`https://graph.facebook.com/v21.0/${wabaId}/subscribed_apps`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const subscribeJson = await subscribeRes.json();
+
+  const verifyRes = await fetch(`https://graph.facebook.com/v21.0/${wabaId}/subscribed_apps`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const verifyJson = await verifyRes.json();
+
+  return NextResponse.json({ wabaId, subscribeResult: subscribeJson, subscribedAppsAfter: verifyJson });
+}
