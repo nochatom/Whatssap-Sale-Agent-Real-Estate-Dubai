@@ -17,20 +17,36 @@ export async function GET(request: NextRequest) {
   }
 
   const phoneRes = await fetch(
-    `https://graph.facebook.com/v21.0/${phoneId}?fields=whatsapp_business_account,verified_name,display_phone_number`,
+    `https://graph.facebook.com/v21.0/${phoneId}?fields=verified_name,display_phone_number,quality_rating`,
     { headers: { Authorization: `Bearer ${token}` } },
   );
   const phoneJson = await phoneRes.json();
 
-  const wabaId = phoneJson?.whatsapp_business_account?.id;
-  let templates: unknown = null;
-  if (wabaId) {
-    const tRes = await fetch(
-      `https://graph.facebook.com/v21.0/${wabaId}/message_templates?name=property_video_intro_v1`,
+  const businessesRes = await fetch(`https://graph.facebook.com/v21.0/me/businesses`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const businessesJson = await businessesRes.json();
+
+  const wabaResults: unknown[] = [];
+  for (const biz of businessesJson?.data ?? []) {
+    const wabaRes = await fetch(
+      `https://graph.facebook.com/v21.0/${biz.id}/owned_whatsapp_business_accounts`,
       { headers: { Authorization: `Bearer ${token}` } },
     );
-    templates = await tRes.json();
+    const wabaJson = await wabaRes.json();
+    for (const waba of wabaJson?.data ?? []) {
+      const tRes = await fetch(
+        `https://graph.facebook.com/v21.0/${waba.id}/message_templates?name=property_video_intro_v1`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      const tJson = await tRes.json();
+      const phonesRes = await fetch(`https://graph.facebook.com/v21.0/${waba.id}/phone_numbers`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const phonesJson = await phonesRes.json();
+      wabaResults.push({ businessId: biz.id, businessName: biz.name, wabaId: waba.id, templates: tJson, phoneNumbers: phonesJson });
+    }
   }
 
-  return NextResponse.json({ phoneId, phoneJson, wabaId, templates });
+  return NextResponse.json({ phoneId, phoneJson, businessesJson, wabaResults });
 }
