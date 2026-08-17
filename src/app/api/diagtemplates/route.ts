@@ -22,16 +22,29 @@ export async function GET(request: NextRequest) {
 
   const wabaResults: unknown[] = [];
   for (const waba of wabaJson?.data ?? []) {
-    const [phonesRes, templatesRes] = await Promise.all([
+    const [phonesRes, templatesRes, subscribedAppsRes] = await Promise.all([
       fetch(`https://graph.facebook.com/v21.0/${waba.id}/phone_numbers`, {
         headers: { Authorization: `Bearer ${token}` },
       }),
       fetch(`https://graph.facebook.com/v21.0/${waba.id}/message_templates?name=property_video_intro_v1`, {
         headers: { Authorization: `Bearer ${token}` },
       }),
+      fetch(`https://graph.facebook.com/v21.0/${waba.id}/subscribed_apps`, {
+        headers: { Authorization: `Bearer ${token}` },
+      }),
     ]);
-    const [phonesJson, templatesJson] = await Promise.all([phonesRes.json(), templatesRes.json()]);
-    wabaResults.push({ wabaId: waba.id, wabaName: waba.name, phoneNumbers: phonesJson, propertyVideoTemplate: templatesJson });
+    const [phonesJson, templatesJson, subscribedAppsJson] = await Promise.all([
+      phonesRes.json(),
+      templatesRes.json(),
+      subscribedAppsRes.json(),
+    ]);
+    wabaResults.push({
+      wabaId: waba.id,
+      wabaName: waba.name,
+      phoneNumbers: phonesJson,
+      propertyVideoTemplate: templatesJson,
+      subscribedApps: subscribedAppsJson,
+    });
   }
 
   return NextResponse.json({ businessId, wabaJson, wabaResults });
