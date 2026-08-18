@@ -25,7 +25,6 @@ type ComplianceFailure =
   | "suppression"
   | "opt_out"
   | "campaign_inactive"
-  | "daily_budget_exceeded"
   | "idempotency_conflict"
   | "service_window_closed"
   | "template_not_approved";

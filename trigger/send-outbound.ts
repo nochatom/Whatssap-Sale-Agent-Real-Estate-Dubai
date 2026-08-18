@@ -221,11 +221,9 @@ export async function sendOutbound(payload: SendOutboundPayload): Promise<SendOu
 /**
  * Queue: concurrencyLimit 1. Callers MUST trigger this task with
  * `concurrencyKey: senderPhoneNumberId` — Trigger.dev then serializes all
- * sends sharing a sender number into one lane, which is what makes the
- * daily-budget read-then-send in src/compliance/checks.ts#checkDailyBudget
- * effectively atomic per sender. Different sender numbers still run in
- * parallel. Retries are safe because Message.idempotencyKey makes a
- * duplicate send a no-op at the database layer, not just app logic.
+ * sends sharing a sender number into one lane. Different sender numbers
+ * still run in parallel. Retries are safe because Message.idempotencyKey
+ * makes a duplicate send a no-op at the database layer, not just app logic.
  *
  * sendMessage()/sendTemplateMessage() still hard-throw unless
  * SENDING_ENABLED === "true", which is never set in a committed file — this

@@ -6,7 +6,6 @@ export type ComplianceFailure =
   | "suppression"
   | "opt_out"
   | "campaign_inactive"
-  | "daily_budget_exceeded"
   | "idempotency_conflict"
   | "service_window_closed"
   | "template_not_approved";
@@ -35,39 +34,6 @@ export function checkOptOutFlag(lead: Pick<Lead, "optedIn">): boolean {
 export function checkCampaignActive(campaign: Pick<Campaign, "status"> | null): boolean {
   if (!campaign) return true;
   return campaign.status === "ACTIVE";
-}
-
-/**
- * Counts today's outbound messages sent from this campaign's sender number.
- * This read is NOT atomic by itself — it only becomes a real budget gate when
- * the send-outbound Trigger.dev task runs with concurrencyKey: senderPhoneNumberId
- * and queue.concurrencyLimit: 1, which serializes this read-then-send per
- * sender number. See trigger/send-outbound.ts.
- *
- * No campaign means no configured dailyBudgetPerNumber exists to check
- * against — there is nowhere else in the system a budget limit for an
- * organic (no-campaign) conversation could come from, and inventing one
- * would be the same mistake as inventing a price or a follow-up interval.
- * This is a deliberate, reported decision (see the Phase 2 report), not a
- * silent skip.
- */
-export async function checkDailyBudget(
-  campaign: Pick<Campaign, "id" | "dailyBudgetPerNumber"> | null,
-): Promise<boolean> {
-  if (!campaign) return true;
-
-  const startOfDay = new Date();
-  startOfDay.setHours(0, 0, 0, 0);
-
-  const sentToday = await prisma.message.count({
-    where: {
-      direction: "OUTBOUND",
-      createdAt: { gte: startOfDay },
-      conversation: { campaignId: campaign.id },
-    },
-  });
-
-  return sentToday < campaign.dailyBudgetPerNumber;
 }
 
 export async function checkIdempotency(idempotencyKey: string): Promise<boolean> {
@@ -112,11 +78,11 @@ export interface RunComplianceGateParams {
   /**
    * Null for an organically initiated conversation (no Campaign). Suppression,
    * opt-out, idempotency, and the 24h service window are unaffected — they
-   * never depended on a campaign. Only checkCampaignActive/checkDailyBudget
-   * (nothing to check) and checkTemplateApproval (fails closed) change
-   * behavior, per their own docs above.
+   * never depended on a campaign. Only checkCampaignActive (nothing to check)
+   * and checkTemplateApproval (fails closed) change behavior, per their own
+   * docs above.
    */
-  campaign: Pick<Campaign, "id" | "status" | "dailyBudgetPerNumber" | "templateStatus"> | null;
+  campaign: Pick<Campaign, "id" | "status" | "templateStatus"> | null;
   conversation: Pick<Conversation, "lastInboundAt">;
   idempotencyKey: string;
   isTemplate: boolean;
@@ -137,9 +103,6 @@ export async function runComplianceGate(
   }
   if (!checkCampaignActive(params.campaign)) {
     return { passed: false, failedCheck: "campaign_inactive" };
-  }
-  if (!(await checkDailyBudget(params.campaign))) {
-    return { passed: false, failedCheck: "daily_budget_exceeded" };
   }
   if (!(await checkIdempotency(params.idempotencyKey))) {
     return { passed: false, failedCheck: "idempotency_conflict" };

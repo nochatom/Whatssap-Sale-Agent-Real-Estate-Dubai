@@ -97,15 +97,6 @@ describe("sendOutbound", () => {
     expect(messageCreate).not.toHaveBeenCalled();
   });
 
-  it("blocks and never calls sendMessage when the daily budget is exhausted", async () => {
-    messageCount.mockResolvedValue(100); // equals dailyBudgetPerNumber
-
-    const result = await sendOutbound(BASE_PAYLOAD);
-
-    expect(result).toEqual({ sent: false, blockedBy: "daily_budget_exceeded" });
-    expect(sendMessageMock).not.toHaveBeenCalled();
-  });
-
   it("blocks and never calls sendMessage when the idempotency key already exists", async () => {
     messageFindUnique.mockResolvedValue({ id: "existing_msg" });
 
@@ -321,15 +312,5 @@ describe("sendOutbound", () => {
       expect(sendMessageMock).not.toHaveBeenCalled();
     });
 
-    it("is not gated by daily budget — there is no campaign to source a limit from", async () => {
-      // messageCount deliberately left high; with no campaign there is no
-      // dailyBudgetPerNumber to compare it against, so this must not block.
-      messageCount.mockResolvedValue(99999);
-      sendMessageMock.mockResolvedValue({ waMessageId: "wamid.ORG2" });
-
-      const result = await sendOutbound(ORGANIC_PAYLOAD);
-
-      expect(result.sent).toBe(true);
-    });
   });
 });
