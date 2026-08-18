@@ -10,12 +10,20 @@ interface WhatsAppWebhookMessageError {
   message?: string;
 }
 
+interface WhatsAppWebhookButtonReply {
+  /** The button's own visible label — what the customer actually tapped, e.g. "Yes, send me a sample". */
+  text?: string;
+  payload?: string;
+}
+
 interface WhatsAppWebhookMessage {
   from: string;
   id: string;
   timestamp: string;
   type: string;
   text?: { body: string };
+  /** Present when the customer taps a template's Quick Reply button. */
+  button?: WhatsAppWebhookButtonReply;
   image?: WhatsAppWebhookMedia;
   document?: WhatsAppWebhookMedia;
   audio?: WhatsAppWebhookMedia;
@@ -123,9 +131,11 @@ export function extractInboundMessage(payload: WhatsAppWebhookPayload): ParsedIn
     text:
       message.type === "text"
         ? message.text?.body
-        : unsupportedReason
-          ? `Unsupported message: ${unsupportedReason}`
-          : undefined,
+        : message.type === "button"
+          ? message.button?.text
+          : unsupportedReason
+            ? `Unsupported message: ${unsupportedReason}`
+            : undefined,
     mediaId: media?.id,
     mimeType: media?.mime_type,
     filename: media?.filename,
