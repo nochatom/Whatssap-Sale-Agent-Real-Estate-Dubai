@@ -5,6 +5,11 @@ interface WhatsAppWebhookMedia {
   filename?: string;
 }
 
+interface WhatsAppWebhookMessageError {
+  title?: string;
+  message?: string;
+}
+
 interface WhatsAppWebhookMessage {
   from: string;
   id: string;
@@ -16,6 +21,12 @@ interface WhatsAppWebhookMessage {
   audio?: WhatsAppWebhookMedia;
   video?: WhatsAppWebhookMedia;
   sticker?: WhatsAppWebhookMedia;
+  /**
+   * Present on Meta's own "unsupported" message type (view-once media,
+   * certain interactive replies, polls, contact cards, etc.) — Meta's own
+   * explanation of what it couldn't deliver content for.
+   */
+  errors?: WhatsAppWebhookMessageError[];
 }
 
 interface WhatsAppWebhookStatus {
@@ -96,12 +107,25 @@ export function extractInboundMessage(payload: WhatsAppWebhookPayload): ParsedIn
   const mediaField = MEDIA_FIELD_BY_TYPE[message.type];
   const media = mediaField ? message[mediaField] : undefined;
 
+  // Meta's own "unsupported" type carries no text/media field to read — the
+  // best available content is its own explanation of what it couldn't
+  // deliver, so that shows in place of a bare, undiagnosable "[unsupported]".
+  const unsupportedReason =
+    message.type === "unsupported"
+      ? (message.errors?.[0]?.title ?? message.errors?.[0]?.message)
+      : undefined;
+
   return {
     from: message.from,
     waMessageId: message.id,
     timestamp: message.timestamp,
     type: message.type,
-    text: message.type === "text" ? message.text?.body : undefined,
+    text:
+      message.type === "text"
+        ? message.text?.body
+        : unsupportedReason
+          ? `Unsupported message: ${unsupportedReason}`
+          : undefined,
     mediaId: media?.id,
     mimeType: media?.mime_type,
     filename: media?.filename,
