@@ -219,6 +219,13 @@ export default function InboxClient({ initialConversations }: { initialConversat
     };
   }, [view]);
 
+  // Composer state is conversation-specific — a reply target from the
+  // previously open conversation must never carry over when switching to
+  // another one, regardless of which UI path changed selectedId.
+  useEffect(() => {
+    setReplyingTo(null);
+  }, [selectedId]);
+
   // Thread pane: load + poll the selected conversation's messages.
   useEffect(() => {
     if (!selectedId) {
@@ -969,6 +976,7 @@ export default function InboxClient({ initialConversations }: { initialConversat
               </div>
 
               <MessageComposer
+                key={selectedId}
                 replyingTo={
                   replyingTo
                     ? {
