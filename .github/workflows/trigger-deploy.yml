@@ -1,0 +1,17 @@
+name: Deploy Trigger.dev tasks
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Deploy to Trigger.dev production
+        env:
+          TRIGGER_ACCESS_TOKEN: ${{ secrets.TRIGGER_ACCESS_TOKEN }}
+        run: npx trigger.dev@4.5.10 deploy --env prod
