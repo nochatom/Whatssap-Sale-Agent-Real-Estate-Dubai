@@ -87,8 +87,11 @@ export async function importLeadsFromCsv(
       continue;
     }
 
+    // CSV-imported leads are the operator's own sourced contacts — treated
+    // as opted-in for direct outreach. Suppression (checkSuppression) is the
+    // separate, still-active mechanism for anyone who later opts out.
     const created = await prisma.lead.create({
-      data: { phoneE164: e164, name: row.name || undefined },
+      data: { phoneE164: e164, name: row.name || undefined, optedIn: true },
     });
     results.push({ row: rowNumber, phoneRaw, status: "created", leadId: created.id });
   }
