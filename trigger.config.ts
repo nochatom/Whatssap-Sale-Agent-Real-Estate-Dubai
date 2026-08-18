@@ -1,5 +1,6 @@
 import { defineConfig } from "@trigger.dev/sdk/v3";
 import { prismaExtension } from "@trigger.dev/build/extensions/prisma";
+import { additionalFiles } from "@trigger.dev/build/extensions/core";
 
 export default defineConfig({
   project: "proj_gbkpzbdtxslgwjztzdrq",
@@ -11,6 +12,7 @@ export default defineConfig({
         mode: "legacy",
         schema: "prisma/schema.prisma",
       }),
+      additionalFiles({ files: ["skills/**/*.md"] }),
     ],
   },
   // The max compute seconds a task is allowed to run. If the task run exceeds this duration, it will be stopped.
