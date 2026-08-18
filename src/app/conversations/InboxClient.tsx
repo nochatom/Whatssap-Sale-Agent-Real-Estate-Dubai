@@ -305,6 +305,25 @@ export default function InboxClient({ initialConversations }: { initialConversat
     });
   }
 
+  const allFilteredChecked =
+    filteredConversations.length > 0 && filteredConversations.every((c) => checkedIds.has(c.id));
+
+  function toggleSelectAll() {
+    setCheckedIds((prev) => {
+      if (allFilteredChecked) {
+        // Deselect just the currently-visible ones — a checked row that's
+        // since scrolled out of the active filter stays checked, matching
+        // how per-row checking already behaves independent of filtering.
+        const next = new Set(prev);
+        for (const c of filteredConversations) next.delete(c.id);
+        return next;
+      }
+      const next = new Set(prev);
+      for (const c of filteredConversations) next.add(c.id);
+      return next;
+    });
+  }
+
   async function handleBulkDelete() {
     const ids = Array.from(checkedIds);
     if (ids.length === 0) return;
@@ -605,6 +624,32 @@ export default function InboxClient({ initialConversations }: { initialConversat
       <div style={{ display: "flex", flexWrap: "wrap", gap: space.sm, alignItems: "flex-start" }}>
         {/* List pane */}
         <section style={{ ...sectionStyle, width: 340, flexShrink: 0, padding: 0, overflow: "hidden" }}>
+          {filteredConversations.length > 0 && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: `${space.xxs}px ${space.xs}px`,
+                borderBottom: `1px solid ${colors.hairline}`,
+                background: colors.canvasElevated,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={allFilteredChecked}
+                onChange={toggleSelectAll}
+                style={{ flexShrink: 0 }}
+                aria-label={allFilteredChecked ? "Deselect all conversations" : "Select all conversations"}
+              />
+              <label
+                style={{ fontSize: 13, fontWeight: 600, color: colors.ink, cursor: "pointer" }}
+                onClick={toggleSelectAll}
+              >
+                Select all ({filteredConversations.length})
+              </label>
+            </div>
+          )}
           <div style={{ maxHeight: 640, overflowY: "auto" }}>
             {filteredConversations.length === 0 && (
               <p style={{ color: colors.mutedText, fontSize: 13, padding: space.md, margin: 0 }}>
