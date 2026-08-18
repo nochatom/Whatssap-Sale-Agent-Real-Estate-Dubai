@@ -13,7 +13,7 @@ export type StartCampaignResult =
   | { started: true; conversationsTargeted: number };
 
 /** Fixed spacing requirement between campaign opener sends, per operator instruction. */
-const CAMPAIGN_SEND_SPACING_MINUTES = 4;
+const CAMPAIGN_SEND_SPACING_SECONDS = 90;
 
 /**
  * Begins a campaign's outbound opener sends. Every send is a template
@@ -48,7 +48,7 @@ export async function startCampaign(payload: StartCampaignPayload): Promise<Star
   });
 
   for (const [index, conversation] of conversations.entries()) {
-    const delayMinutes = index * CAMPAIGN_SEND_SPACING_MINUTES;
+    const delaySeconds = index * CAMPAIGN_SEND_SPACING_SECONDS;
 
     await sendOutboundTask.trigger(
       {
@@ -61,7 +61,7 @@ export async function startCampaign(payload: StartCampaignPayload): Promise<Star
       },
       {
         concurrencyKey: campaign.senderPhoneNumberId,
-        ...(delayMinutes > 0 ? { delay: `${delayMinutes}m` } : {}),
+        ...(delaySeconds > 0 ? { delay: `${delaySeconds}s` } : {}),
       },
     );
   }
@@ -69,7 +69,7 @@ export async function startCampaign(payload: StartCampaignPayload): Promise<Star
   logger.log("start-campaign: openers scheduled", {
     campaignId: campaign.id,
     conversationsTargeted: conversations.length,
-    spacingMinutes: CAMPAIGN_SEND_SPACING_MINUTES,
+    spacingSeconds: CAMPAIGN_SEND_SPACING_SECONDS,
   });
 
   return { started: true, conversationsTargeted: conversations.length };
