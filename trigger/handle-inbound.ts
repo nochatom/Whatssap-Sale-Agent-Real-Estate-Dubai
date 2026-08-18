@@ -46,9 +46,13 @@ async function cancelPendingFollowUps(conversationId: string): Promise<void> {
   }
 }
 
+// Randomized 3-5s so replies don't all land at the exact same offset.
+const MIN_REPLY_DELAY_MS = 3000;
+const MAX_REPLY_DELAY_MS = 5000;
+
 /**
  * Classifies the triggering message and, if classifiable, cancels any
- * pending follow-up and schedules send-ai-reply 2 minutes out. Does NOT
+ * pending follow-up and schedules send-ai-reply 3-5 seconds out. Does NOT
  * invoke the Skill or send anything itself — that all happens in
  * send-ai-reply, at fire time, against whatever the conversation looks like
  * then (never a decision made here and replayed later).
@@ -66,18 +70,21 @@ export async function handleInbound(payload: HandleInboundPayload): Promise<Hand
 
   await cancelPendingFollowUps(payload.conversationId);
 
+  const delayMs = MIN_REPLY_DELAY_MS + Math.random() * (MAX_REPLY_DELAY_MS - MIN_REPLY_DELAY_MS);
+  const delayDate = new Date(Date.now() + delayMs);
+
   await sendAiReplyTask.trigger(
     {
       conversationId: payload.conversationId,
       triggeringMessageId: payload.messageId,
       triggeringWaMessageId: payload.waMessageId,
     },
-    { delay: "2m", concurrencyKey: payload.conversationId },
+    { delay: delayDate, concurrencyKey: payload.conversationId },
   );
 
   logger.log("handle-inbound: send-ai-reply scheduled", {
     conversationId: payload.conversationId,
-    delay: "2m",
+    delayMs: Math.round(delayMs),
   });
 
   return { invoked: true, replyScheduled: true };
