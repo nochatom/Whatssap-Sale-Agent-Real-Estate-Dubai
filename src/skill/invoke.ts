@@ -1,6 +1,6 @@
 import { loadSkillMarkdown } from "./skill-file";
 import { invokeAnthropic } from "./providers/anthropic";
-import { invokeNvidia } from "./providers/nvidia";
+import { invokeCloudflare } from "./providers/cloudflare";
 import type { SkillProvider } from "./providers/types";
 import type { SkillInvocationContext, SkillInvocationResult } from "./types";
 
@@ -12,16 +12,16 @@ const SKILL_MARKDOWN = loadSkillMarkdown();
 
 const PROVIDERS: Record<string, SkillProvider> = {
   anthropic: invokeAnthropic,
-  nvidia: invokeNvidia,
+  cloudflare: invokeCloudflare,
 };
 
 /**
- * AI_PROVIDER selects which underlying AI API generates replies — "nvidia"
- * or "anthropic". Unset or unrecognized falls back to "anthropic" (the
- * original, historically-known-good provider) rather than guessing. Both
- * providers implement the identical Skill contract (same SKILL_MARKDOWN,
- * same extraction prompt, same SkillDecision validation) — swapping
- * providers is only ever this one env var, never a code change.
+ * AI_PROVIDER selects which underlying AI API generates replies —
+ * "cloudflare" or "anthropic". Unset or unrecognized falls back to
+ * "anthropic" (the original, historically-known-good provider) rather than
+ * guessing. Both providers implement the identical Skill contract (same
+ * SKILL_MARKDOWN, same extraction prompt, same SkillDecision validation) —
+ * swapping providers is only ever this one env var, never a code change.
  */
 export async function invokeSkill(
   context: SkillInvocationContext,
