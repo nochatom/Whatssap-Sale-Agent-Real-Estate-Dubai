@@ -37,6 +37,7 @@ export const invokeCloudflare: SkillProvider = async (context, skillMarkdown) =>
 
   const skillResponse = await openai.chat.completions.create({
     model: MODEL,
+    max_tokens: 2048,
     messages: [
       { role: "system", content: skillMarkdown },
       { role: "user", content: buildSkillInput(context) },
@@ -57,6 +58,7 @@ export const invokeCloudflare: SkillProvider = async (context, skillMarkdown) =>
   try {
     const extractionResponse = await openai.chat.completions.create({
       model: MODEL,
+      max_tokens: 2048,
       messages: [
         { role: "system", content: EXTRACTION_SYSTEM_PROMPT },
         { role: "user", content: prose },
