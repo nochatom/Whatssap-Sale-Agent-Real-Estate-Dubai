@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 
 import { buildSkillInput } from "../build-prompt";
-import { parseExtractionOutput } from "../parse-decision";
+import { SKILL_DECISION_JSON_SCHEMA, parseExtractionOutput } from "../parse-decision";
 import { EXTRACTION_SYSTEM_PROMPT } from "./extraction-prompt";
 import type { SkillProvider } from "./types";
 
@@ -42,13 +42,23 @@ export const invokeNvidia: SkillProvider = async (context, skillMarkdown) => {
     return { status: "parse_failure", reason: "Skill call returned no content", rawOutput: "" };
   }
 
+  // Plain json_object mode only guarantees syntactically valid JSON — the
+  // model still infers field names/nesting from the prose prompt alone,
+  // which drifted from SkillDecision's exact shape in testing (e.g.
+  // buyingSignal flattened to a string instead of {level, evidence}).
+  // Strict json_schema mode (confirmed supported by this NVIDIA endpoint)
+  // enforces the exact shape, matching how the Anthropic path already
+  // passes SKILL_DECISION_JSON_SCHEMA via output_config.format.
   const extractionResponse = await openai.chat.completions.create({
     model: MODEL,
     messages: [
       { role: "system", content: EXTRACTION_SYSTEM_PROMPT },
       { role: "user", content: prose },
     ],
-    response_format: { type: "json_object" },
+    response_format: {
+      type: "json_schema",
+      json_schema: { name: "skill_decision", schema: SKILL_DECISION_JSON_SCHEMA, strict: true },
+    },
   });
 
   const extractionText = extractionResponse.choices[0]?.message?.content ?? "";
