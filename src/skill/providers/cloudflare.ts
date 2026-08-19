@@ -34,6 +34,7 @@ function client(): OpenAI {
 
 export const invokeCloudflare: SkillProvider = async (context, skillMarkdown) => {
   const openai = client();
+  const t0 = Date.now();
 
   const skillResponse = await openai.chat.completions.create({
     model: MODEL,
@@ -43,10 +44,16 @@ export const invokeCloudflare: SkillProvider = async (context, skillMarkdown) =>
       { role: "user", content: buildSkillInput(context) },
     ],
   });
+  const proseCallMs = Date.now() - t0;
 
   const prose = skillResponse.choices[0]?.message?.content ?? "";
   if (!prose) {
-    return { status: "parse_failure", reason: "Skill call returned no content", rawOutput: "" };
+    return {
+      status: "parse_failure",
+      reason: "Skill call returned no content",
+      rawOutput: "",
+      timingsMs: { proseCallMs, extractionCallMs: 0, totalMs: Date.now() - t0 },
+    };
   }
 
   // Cloudflare's own docs are explicit that JSON Mode is not guaranteed —
@@ -54,6 +61,7 @@ export const invokeCloudflare: SkillProvider = async (context, skillMarkdown) =>
   // met." That must land here as a normal parse_failure result, not an
   // uncaught throw (unlike the Anthropic/NVIDIA paths, which only had to
   // handle empty/malformed content, never an explicit API-level failure).
+  const t1 = Date.now();
   let extractionText: string;
   try {
     const extractionResponse = await openai.chat.completions.create({
@@ -71,18 +79,30 @@ export const invokeCloudflare: SkillProvider = async (context, skillMarkdown) =>
     extractionText = extractionResponse.choices[0]?.message?.content ?? "";
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
-    return { status: "parse_failure", reason: `extraction call failed: ${reason}`, rawOutput: prose };
+    return {
+      status: "parse_failure",
+      reason: `extraction call failed: ${reason}`,
+      rawOutput: prose,
+      timingsMs: { proseCallMs, extractionCallMs: Date.now() - t1, totalMs: Date.now() - t0 },
+    };
   }
+  const extractionCallMs = Date.now() - t1;
+  const timingsMs = { proseCallMs, extractionCallMs, totalMs: Date.now() - t0 };
 
   if (!extractionText) {
-    return { status: "parse_failure", reason: "extraction call returned no content", rawOutput: prose };
+    return {
+      status: "parse_failure",
+      reason: "extraction call returned no content",
+      rawOutput: prose,
+      timingsMs,
+    };
   }
 
   const parsed = parseExtractionOutput(extractionText);
 
   if (!parsed.ok) {
-    return { status: "parse_failure", reason: parsed.reason, rawOutput: prose };
+    return { status: "parse_failure", reason: parsed.reason, rawOutput: prose, timingsMs };
   }
 
-  return { status: "success", decision: parsed.decision, rawOutput: prose };
+  return { status: "success", decision: parsed.decision, rawOutput: prose, timingsMs };
 };

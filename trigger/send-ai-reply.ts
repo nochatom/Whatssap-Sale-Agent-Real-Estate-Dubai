@@ -41,6 +41,7 @@ export type SendAiReplyResult =
  * last one in a burst ever proceeds.
  */
 export async function sendAiReply(payload: SendAiReplyPayload): Promise<SendAiReplyResult> {
+  const taskStartedAt = Date.now();
   const latestInbound = await prisma.message.findFirst({
     where: { conversationId: payload.conversationId, direction: "INBOUND" },
     orderBy: { createdAt: "desc" },
@@ -66,6 +67,7 @@ export async function sendAiReply(payload: SendAiReplyPayload): Promise<SendAiRe
     return { evaluated: false, reason: "triggering message is not classifiable" };
   }
 
+  const dbFetchStartedAt = Date.now();
   const [conversation, history] = await Promise.all([
     prisma.conversation.findUniqueOrThrow({
       where: { id: payload.conversationId },
@@ -76,6 +78,7 @@ export async function sendAiReply(payload: SendAiReplyPayload): Promise<SendAiRe
       orderBy: { createdAt: "asc" },
     }),
   ]);
+  const dbFetchMs = Date.now() - dbFetchStartedAt;
 
   const skillMessages: SkillInputMessage[] = history.map((m) => ({
     direction: m.direction === "INBOUND" ? "inbound" : "outbound",
@@ -90,13 +93,27 @@ export async function sendAiReply(payload: SendAiReplyPayload): Promise<SendAiRe
     lead: { phoneE164: conversation.lead.phoneE164, knownFacts: {} },
   };
 
+  const invokeSkillStartedAt = Date.now();
   const result = await invokeSkill(context);
+  const invokeSkillMs = Date.now() - invokeSkillStartedAt;
 
+  // Diagnostic-only debug block appended to rawInput (never read by the
+  // WhatsApp send path, the UI, or SkillDecision — purely for measuring the
+  // ~46s real-world latency reported after the demo-link fix). Remove once
+  // the bottleneck investigation is done.
+  const debugTimingsMs = {
+    preprocessingMs: dbFetchStartedAt - taskStartedAt,
+    dbFetchMs,
+    invokeSkillMs,
+    invokeSkillBreakdown: result.timingsMs ?? null,
+  };
+
+  const aiDecisionPersistStartedAt = Date.now();
   const aiDecision = await prisma.aiDecision.create({
     data: {
       conversationId: conversation.id,
       messageId: payload.triggeringMessageId,
-      rawInput: context as unknown as Prisma.InputJsonValue,
+      rawInput: { ...context, _debugTimingsMs: debugTimingsMs } as unknown as Prisma.InputJsonValue,
       rawOutput: result.rawOutput,
       parseStatus: result.status === "success" ? "SUCCESS" : "PARSE_FAILURE",
       parsedDecision:
@@ -105,8 +122,12 @@ export async function sendAiReply(payload: SendAiReplyPayload): Promise<SendAiRe
           : Prisma.JsonNull,
     },
   });
+  const aiDecisionPersistMs = Date.now() - aiDecisionPersistStartedAt;
 
-  logger.log("send-ai-reply: AiDecision persisted", { status: result.status });
+  logger.log("send-ai-reply: AiDecision persisted", {
+    status: result.status,
+    debugTimingsMs: { ...debugTimingsMs, aiDecisionPersistMs },
+  });
 
   if (result.status !== "success") {
     return { evaluated: true, status: result.status, replyTriggered: false };
@@ -135,6 +156,7 @@ export async function sendAiReply(payload: SendAiReplyPayload): Promise<SendAiRe
   let campaignId: string | undefined;
   let senderPhoneNumberId: string;
 
+  const campaignLookupStartedAt = Date.now();
   if (conversation.campaignId) {
     const campaign = await prisma.campaign.findUniqueOrThrow({ where: { id: conversation.campaignId } });
     campaignId = campaign.id;
@@ -154,6 +176,9 @@ export async function sendAiReply(payload: SendAiReplyPayload): Promise<SendAiRe
     };
   }
 
+  const campaignLookupMs = Date.now() - campaignLookupStartedAt;
+
+  const sendOutboundTriggerStartedAt = Date.now();
   await sendOutboundTask.trigger(
     {
       conversationId: conversation.id,
@@ -165,6 +190,15 @@ export async function sendAiReply(payload: SendAiReplyPayload): Promise<SendAiRe
     },
     { concurrencyKey: senderPhoneNumberId },
   );
+  logger.log("send-ai-reply: sendOutboundTask triggered", {
+    debugTimingsMs: {
+      ...debugTimingsMs,
+      aiDecisionPersistMs,
+      campaignLookupMs,
+      sendOutboundTriggerMs: Date.now() - sendOutboundTriggerStartedAt,
+      totalSendAiReplyMs: Date.now() - taskStartedAt,
+    },
+  });
 
   return { evaluated: true, status: result.status, replyTriggered: true };
 }

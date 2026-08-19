@@ -70,6 +70,7 @@ export type SendOutboundResult =
  * blocks the duplicate. This is the existing, already-documented design.
  */
 export async function sendOutbound(payload: SendOutboundPayload): Promise<SendOutboundResult> {
+  const taskStartedAt = Date.now();
   const isTemplate = payload.isTemplate ?? false;
 
   if (!isTemplate && !payload.body && !payload.media) {
@@ -82,6 +83,7 @@ export async function sendOutbound(payload: SendOutboundPayload): Promise<SendOu
     throw new Error("sendOutbound: a template send cannot also carry media — there is no such Meta message shape");
   }
 
+  const dbFetchStartedAt = Date.now();
   const [lead, campaign, conversation] = await Promise.all([
     prisma.lead.findUniqueOrThrow({ where: { id: payload.leadId } }),
     payload.campaignId
@@ -89,7 +91,9 @@ export async function sendOutbound(payload: SendOutboundPayload): Promise<SendOu
       : Promise.resolve(null),
     prisma.conversation.findUniqueOrThrow({ where: { id: payload.conversationId } }),
   ]);
+  const dbFetchMs = Date.now() - dbFetchStartedAt;
 
+  const gateStartedAt = Date.now();
   const gate = await runComplianceGate({
     phoneE164: lead.phoneE164,
     lead,
@@ -98,6 +102,7 @@ export async function sendOutbound(payload: SendOutboundPayload): Promise<SendOu
     idempotencyKey: payload.idempotencyKey,
     isTemplate,
   });
+  const gateMs = Date.now() - gateStartedAt;
 
   if (!gate.passed) {
     logger.log("send-outbound: blocked by compliance gate", {
@@ -126,6 +131,7 @@ export async function sendOutbound(payload: SendOutboundPayload): Promise<SendOu
     contextMessageId = replyTarget?.waMessageId ?? undefined;
   }
 
+  const whatsappCallStartedAt = Date.now();
   let sendResult: { waMessageId: string };
   let persistedBody: string | null;
   let persistedType: string;
@@ -187,6 +193,9 @@ export async function sendOutbound(payload: SendOutboundPayload): Promise<SendOu
     persistedTemplateName = null;
   }
 
+  const whatsappCallMs = Date.now() - whatsappCallStartedAt;
+
+  const dbWriteStartedAt = Date.now();
   const message = await prisma.message.create({
     data: {
       conversationId: payload.conversationId,
@@ -208,11 +217,20 @@ export async function sendOutbound(payload: SendOutboundPayload): Promise<SendOu
     where: { id: payload.conversationId },
     data: { lastOutboundAt: new Date() },
   });
+  const dbWriteMs = Date.now() - dbWriteStartedAt;
 
   logger.log("send-outbound: sent", {
     messageId: message.id,
     waMessageId: sendResult.waMessageId,
     isTemplate,
+    debugTimingsMs: {
+      preprocessingMs: dbFetchStartedAt - taskStartedAt,
+      dbFetchMs,
+      gateMs,
+      whatsappCallMs,
+      dbWriteMs,
+      totalSendOutboundMs: Date.now() - taskStartedAt,
+    },
   });
 
   return { sent: true, waMessageId: sendResult.waMessageId, messageId: message.id };

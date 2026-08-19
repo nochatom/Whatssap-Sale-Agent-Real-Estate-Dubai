@@ -58,6 +58,18 @@ export interface SkillInvocationContext {
   };
 }
 
+/**
+ * Diagnostic-only, additive to every result variant. Not part of the
+ * client-facing decision shape — never read by the WhatsApp send path or the
+ * UI. Optional so providers that don't report timings (e.g. anthropic.ts)
+ * need no changes.
+ */
+export interface SkillInvocationTimingsMs {
+  proseCallMs: number;
+  extractionCallMs: number;
+  totalMs: number;
+}
+
 export type SkillInvocationResult =
-  | { status: "success"; decision: SkillDecision; rawOutput: string }
-  | { status: "parse_failure"; reason: string; rawOutput: string };
+  | { status: "success"; decision: SkillDecision; rawOutput: string; timingsMs?: SkillInvocationTimingsMs }
+  | { status: "parse_failure"; reason: string; rawOutput: string; timingsMs?: SkillInvocationTimingsMs };
