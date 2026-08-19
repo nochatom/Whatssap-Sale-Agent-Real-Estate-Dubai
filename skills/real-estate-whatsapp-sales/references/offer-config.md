@@ -35,6 +35,12 @@ Direct link (not a folder — safe to send as-is, previews inline): https://driv
 
 When the client explicitly asks to see the demo, asks for a sample, or confirms wanting to see it (e.g. "yes, send it" after being offered one) — send this exact link **in that same reply**, not a promise to send it later. Never claim it will be sent "shortly" / "within X minutes" / "soon" — the link itself is the delivery. Do not modify, shorten, or re-host the URL. Per §17, it goes in the RECOMMENDED WHATSAPP REPLY as plain text alongside whatever else the reply needs to say — no markdown, no extra framing beyond what `whatsapp-style.md` already allows.
 
+**The literal URL text (`https://drive.google.com/file/d/1zbNgtjv-MnQCR6BSZjT__cyS2PzQTYcr/view?usp=sharing`) must be present, character-for-character, inside `recommendedReply.text` itself.** Writing "I've sent you the link," "I've sent the demo again," or any other description of the act of sending — without the URL string actually appearing in that same reply — is WRONG and is treated the same as not sending it at all. Never describe having sent it; paste it.
+
+Example of a correctly formed reply (adapt the surrounding sentence to the conversation, but reproduce the URL exactly as shown, unshortened):
+
+> Here's the demo: https://drive.google.com/file/d/1zbNgtjv-MnQCR6BSZjT__cyS2PzQTYcr/view?usp=sharing
+
 Still governed by the existing rule (see `examples.md` Case 2): only send it when the client has said yes or asked directly — never unprompted.
 
 ## Revisions
