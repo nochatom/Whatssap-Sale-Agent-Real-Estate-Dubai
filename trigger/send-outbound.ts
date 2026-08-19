@@ -195,28 +195,32 @@ export async function sendOutbound(payload: SendOutboundPayload): Promise<SendOu
 
   const whatsappCallMs = Date.now() - whatsappCallStartedAt;
 
+  // message.create and conversation.update are independent writes — the
+  // update only sets lastOutboundAt and never needs the created message's
+  // id — so they run concurrently instead of one after the other.
   const dbWriteStartedAt = Date.now();
-  const message = await prisma.message.create({
-    data: {
-      conversationId: payload.conversationId,
-      direction: "OUTBOUND",
-      waMessageId: sendResult.waMessageId,
-      idempotencyKey: payload.idempotencyKey,
-      type: persistedType,
-      body: persistedBody,
-      templateName: persistedTemplateName,
-      mediaId: persistedMediaId,
-      mimeType: persistedMimeType,
-      filename: persistedFilename,
-      replyToMessageId: payload.replyToMessageId ?? null,
-      status: "SENT",
-    },
-  });
-
-  await prisma.conversation.update({
-    where: { id: payload.conversationId },
-    data: { lastOutboundAt: new Date() },
-  });
+  const [message] = await Promise.all([
+    prisma.message.create({
+      data: {
+        conversationId: payload.conversationId,
+        direction: "OUTBOUND",
+        waMessageId: sendResult.waMessageId,
+        idempotencyKey: payload.idempotencyKey,
+        type: persistedType,
+        body: persistedBody,
+        templateName: persistedTemplateName,
+        mediaId: persistedMediaId,
+        mimeType: persistedMimeType,
+        filename: persistedFilename,
+        replyToMessageId: payload.replyToMessageId ?? null,
+        status: "SENT",
+      },
+    }),
+    prisma.conversation.update({
+      where: { id: payload.conversationId },
+      data: { lastOutboundAt: new Date() },
+    }),
+  ]);
   const dbWriteMs = Date.now() - dbWriteStartedAt;
 
   logger.log("send-outbound: sent", {

@@ -93,8 +93,16 @@ export async function sendAiReply(payload: SendAiReplyPayload): Promise<SendAiRe
     lead: { phoneE164: conversation.lead.phoneE164, knownFacts: {} },
   };
 
+  // Only needed later if the decision turns out to be a "reply" for a
+  // campaign-attached conversation, but it doesn't depend on the AI result —
+  // start it now so it resolves for free inside invokeSkill's ~30s call
+  // instead of adding its own round trip afterward.
+  const campaignPromise = conversation.campaignId
+    ? prisma.campaign.findUniqueOrThrow({ where: { id: conversation.campaignId } })
+    : null;
+
   const invokeSkillStartedAt = Date.now();
-  const result = await invokeSkill(context);
+  const [result, prefetchedCampaign] = await Promise.all([invokeSkill(context), campaignPromise]);
   const invokeSkillMs = Date.now() - invokeSkillStartedAt;
 
   // Diagnostic-only debug block appended to rawInput (never read by the
@@ -156,9 +164,10 @@ export async function sendAiReply(payload: SendAiReplyPayload): Promise<SendAiRe
   let campaignId: string | undefined;
   let senderPhoneNumberId: string;
 
-  const campaignLookupStartedAt = Date.now();
   if (conversation.campaignId) {
-    const campaign = await prisma.campaign.findUniqueOrThrow({ where: { id: conversation.campaignId } });
+    // Guaranteed non-null: conversation.campaignId was set, so campaignPromise
+    // above was the findUniqueOrThrow branch, not the null branch.
+    const campaign = prefetchedCampaign as NonNullable<typeof prefetchedCampaign>;
     campaignId = campaign.id;
     senderPhoneNumberId = campaign.senderPhoneNumberId;
   } else if (conversation.senderPhoneNumberId) {
@@ -176,8 +185,6 @@ export async function sendAiReply(payload: SendAiReplyPayload): Promise<SendAiRe
     };
   }
 
-  const campaignLookupMs = Date.now() - campaignLookupStartedAt;
-
   const sendOutboundTriggerStartedAt = Date.now();
   await sendOutboundTask.trigger(
     {
@@ -194,7 +201,6 @@ export async function sendAiReply(payload: SendAiReplyPayload): Promise<SendAiRe
     debugTimingsMs: {
       ...debugTimingsMs,
       aiDecisionPersistMs,
-      campaignLookupMs,
       sendOutboundTriggerMs: Date.now() - sendOutboundTriggerStartedAt,
       totalSendAiReplyMs: Date.now() - taskStartedAt,
     },
