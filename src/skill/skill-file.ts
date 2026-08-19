@@ -68,8 +68,30 @@ export function assertReferencesExist(skillMarkdown: string, skillDir: string): 
   }
 }
 
+/**
+ * §18 "Reference routing" tells the model to read references/*.md, but the
+ * model only ever sees whatever string is passed as its system prompt — it
+ * cannot actually open a file. So every existing reference file referenced
+ * by SKILL.md is inlined here, after SKILL.md's own text, each under a
+ * heading naming its path so the model can tell which file is which.
+ * Missing optional references are skipped (already warned about by
+ * assertReferencesExist); missing required ones already hard-throw above.
+ */
+function loadReferencedFiles(skillMarkdown: string): string {
+  const referenced = extractReferencedFiles(skillMarkdown).filter((ref) =>
+    fs.existsSync(path.join(SKILL_DIR, ref)),
+  );
+
+  return referenced
+    .map((ref) => {
+      const content = fs.readFileSync(path.join(SKILL_DIR, ref), "utf-8");
+      return `\n\n---\n\n# ${ref}\n\n${content}`;
+    })
+    .join("");
+}
+
 export function loadSkillMarkdown(): string {
   const content = fs.readFileSync(SKILL_MD_PATH, "utf-8");
   assertReferencesExist(content, SKILL_DIR);
-  return content;
+  return content + loadReferencedFiles(content);
 }

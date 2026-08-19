@@ -29,6 +29,14 @@ Volume brackets on one identical product — not quality tiers. Nothing is remov
 
 Never frame the lower brackets as a stripped-down or lower-quality option — it is a volume discount on the same product. Never negotiate a price outside this table.
 
+## Demo video
+
+Direct link (not a folder — safe to send as-is, previews inline): https://drive.google.com/file/d/1zbNgtjv-MnQCR6BSZjT__cyS2PzQTYcr/view?usp=sharing
+
+When the client explicitly asks to see the demo, asks for a sample, or confirms wanting to see it (e.g. "yes, send it" after being offered one) — send this exact link **in that same reply**, not a promise to send it later. Never claim it will be sent "shortly" / "within X minutes" / "soon" — the link itself is the delivery. Do not modify, shorten, or re-host the URL. Per §17, it goes in the RECOMMENDED WHATSAPP REPLY as plain text alongside whatever else the reply needs to say — no markdown, no extra framing beyond what `whatsapp-style.md` already allows.
+
+Still governed by the existing rule (see `examples.md` Case 2): only send it when the client has said yes or asked directly — never unprompted.
+
 ## Revisions
 
 Unlimited, within reason. Scoped to reasonable edit requests on the delivered video — not a new production from different photos.
