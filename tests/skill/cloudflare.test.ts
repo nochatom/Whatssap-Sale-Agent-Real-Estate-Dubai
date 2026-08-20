@@ -53,11 +53,9 @@ beforeEach(() => {
   process.env.CLOUDFLARE_API_TOKEN = "test-token";
 });
 
-describe("invokeCloudflare", () => {
-  it("succeeds normally when both calls succeed — unchanged happy path", async () => {
-    createMock
-      .mockResolvedValueOnce({ choices: [{ message: { content: "some prose" } }] })
-      .mockResolvedValueOnce({ choices: [{ message: { content: VALID_DECISION_JSON } }] });
+describe("invokeCloudflare (single-call)", () => {
+  it("succeeds normally with exactly one call to the API", async () => {
+    createMock.mockResolvedValueOnce({ choices: [{ message: { content: VALID_DECISION_JSON } }] });
 
     const result = await invokeCloudflare(CONTEXT, "skill markdown");
 
@@ -65,41 +63,41 @@ describe("invokeCloudflare", () => {
     if (result.status === "success") {
       expect(result.decision.recommendedReply).toEqual({ kind: "reply", text: "Hi! How can I help?" });
     }
-    expect(createMock).toHaveBeenCalledTimes(2);
+    expect(createMock).toHaveBeenCalledTimes(1);
+
+    // Confirms the single call requests strict schema-constrained output
+    // directly — the output contract itself (SKILL_DECISION_JSON_SCHEMA) is
+    // unchanged from the two-call provider, just requested in one pass.
+    const [callArgs] = createMock.mock.calls[0] as [{ response_format?: { json_schema?: { schema: unknown } } }];
+    expect(callArgs.response_format?.json_schema?.schema).toBe(SKILL_DECISION_JSON_SCHEMA);
   });
 
-  it("throws CloudflareQuotaExceededError when the first (prose) call is rate-limited", async () => {
+  it("throws CloudflareQuotaExceededError when the call is rate-limited", async () => {
     createMock.mockRejectedValueOnce(rateLimitError());
 
     await expect(invokeCloudflare(CONTEXT, "skill markdown")).rejects.toBeInstanceOf(CloudflareQuotaExceededError);
   });
 
-  it("throws CloudflareQuotaExceededError when the second (extraction) call is rate-limited", async () => {
-    createMock
-      .mockResolvedValueOnce({ choices: [{ message: { content: "some prose" } }] })
-      .mockRejectedValueOnce(rateLimitError());
-
-    await expect(invokeCloudflare(CONTEXT, "skill markdown")).rejects.toBeInstanceOf(CloudflareQuotaExceededError);
-  });
-
-  it("re-throws a non-rate-limit error on the first call unchanged (preserves existing retry behavior)", async () => {
+  it("re-throws a non-rate-limit error unchanged (preserves existing task-level retry behavior)", async () => {
     const networkError = new Error("socket hang up");
     createMock.mockRejectedValueOnce(networkError);
 
     await expect(invokeCloudflare(CONTEXT, "skill markdown")).rejects.toBe(networkError);
   });
 
-  it("returns parse_failure (not a throw) for a non-rate-limit error on the extraction call — unchanged", async () => {
-    createMock
-      .mockResolvedValueOnce({ choices: [{ message: { content: "some prose" } }] })
-      .mockRejectedValueOnce(new Error("malformed response"));
+  it("returns parse_failure (not a throw) when the call returns no content", async () => {
+    createMock.mockResolvedValueOnce({ choices: [{ message: { content: "" } }] });
 
     const result = await invokeCloudflare(CONTEXT, "skill markdown");
 
     expect(result.status).toBe("parse_failure");
   });
 
-  it("uses the schema import without alteration — confirms output contract untouched", () => {
-    expect(SKILL_DECISION_JSON_SCHEMA).toBeTruthy();
+  it("returns parse_failure when the response is not valid schema-conformant JSON", async () => {
+    createMock.mockResolvedValueOnce({ choices: [{ message: { content: "not valid json" } }] });
+
+    const result = await invokeCloudflare(CONTEXT, "skill markdown");
+
+    expect(result.status).toBe("parse_failure");
   });
 });
