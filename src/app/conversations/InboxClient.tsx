@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, CheckCheck, AlertCircle, Paperclip, Reply as ReplyIcon, RotateCcw, Loader2, Download, X, FileText, Copy as CopyIcon, Search, Archive, ArchiveRestore, MailOpen } from "lucide-react";
+import { Check, CheckCheck, AlertCircle, Paperclip, Reply as ReplyIcon, RotateCcw, Loader2, Download, X, FileText, Copy as CopyIcon, Search, Archive, ArchiveRestore, MailOpen, MessageSquarePlus } from "lucide-react";
 
 import Badge from "../_components/Badge";
 import { runBulkAction } from "../_lib/bulk-action";
@@ -197,6 +197,7 @@ export default function InboxClient({ initialConversations }: { initialConversat
   const [view, setView] = useState<"inbox" | "archived">("inbox");
   const [unreadCount, setUnreadCount] = useState(0);
   const [archiveBusy, setArchiveBusy] = useState(false);
+  const [resetBusy, setResetBusy] = useState(false);
 
   // List pane: load on view change, then poll for new/updated conversations.
   // Search is client-side only (filters the already-fetched list below) —
@@ -420,6 +421,39 @@ export default function InboxClient({ initialConversations }: { initialConversat
       window.alert(err instanceof Error ? err.message : String(err));
     } finally {
       setArchiveBusy(false);
+    }
+  }
+
+  // Archives the current conversation and creates a fresh, empty one for the
+  // same lead (see /api/conversations/[id]/reset) — nothing is deleted, the
+  // old thread stays fully readable under the Archived view. The next real
+  // inbound message lands on the new conversation automatically.
+  async function handleResetConversation() {
+    if (!selectedId || !detail) return;
+    const label = leadLabel(detail.lead);
+    const confirmMessage =
+      `Start a new conversation with ${label}?\n\n` +
+      `The current conversation and all its messages stay saved — you can still find them under Archived. ` +
+      `New messages will start fresh, without this conversation's history.`;
+    if (!window.confirm(confirmMessage)) return;
+
+    setResetBusy(true);
+    try {
+      const res = await fetch(`/api/conversations/${selectedId}/reset`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to start a new conversation");
+
+      const listRes = await fetch(`/api/conversations${view === "archived" ? "?archived=true" : ""}`);
+      const listData = await listRes.json();
+      if (listRes.ok) {
+        setConversations(listData.conversations ?? []);
+        setUnreadCount(listData.unreadCount ?? 0);
+      }
+      setSelectedId(data.newConversation.id);
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : String(err));
+    } finally {
+      setResetBusy(false);
     }
   }
 
@@ -783,6 +817,16 @@ export default function InboxClient({ initialConversations }: { initialConversat
                     style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 26, height: 26, background: "transparent", border: `1px solid ${colors.hairline}`, borderRadius: 6, color: colors.mutedText, cursor: "pointer" }}
                   >
                     <MailOpen size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleResetConversation}
+                    disabled={resetBusy}
+                    aria-label={`Start a new conversation with ${leadLabel(detail.lead)}`}
+                    title="Start a new conversation — archives this one, keeps its history"
+                    style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 26, height: 26, background: "transparent", border: `1px solid ${colors.hairline}`, borderRadius: 6, color: colors.mutedText, cursor: resetBusy ? "not-allowed" : "pointer" }}
+                  >
+                    <MessageSquarePlus size={13} />
                   </button>
                 </div>
               </div>
