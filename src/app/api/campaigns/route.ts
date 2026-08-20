@@ -1,13 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
+import { prismaErrorResponse } from "@/lib/prisma-errors";
+
+const TEMPLATE_STATUS_VALUES = ["PENDING", "APPROVED", "REJECTED"] as const;
+const CAMPAIGN_STATUS_VALUES = ["DRAFT", "ACTIVE", "PAUSED", "ARCHIVED"] as const;
 
 interface CreateCampaignBody {
   name: string;
   templateName: string;
-  templateStatus?: "PENDING" | "APPROVED" | "REJECTED";
-  status?: "DRAFT" | "ACTIVE" | "PAUSED" | "ARCHIVED";
+  templateStatus?: (typeof TEMPLATE_STATUS_VALUES)[number];
+  status?: (typeof CAMPAIGN_STATUS_VALUES)[number];
   dailyBudgetPerNumber: number;
   senderPhoneNumberId: string;
   followUpDelayMinutes?: number | null;
@@ -39,6 +42,15 @@ export async function POST(request: NextRequest) {
   }
   if (!Number.isFinite(body.dailyBudgetPerNumber) || body.dailyBudgetPerNumber < 0) {
     return NextResponse.json({ error: "dailyBudgetPerNumber must be a non-negative number" }, { status: 400 });
+  }
+  if (body.templateStatus !== undefined && !TEMPLATE_STATUS_VALUES.includes(body.templateStatus)) {
+    return NextResponse.json(
+      { error: `templateStatus must be one of: ${TEMPLATE_STATUS_VALUES.join(", ")}` },
+      { status: 400 },
+    );
+  }
+  if (body.status !== undefined && !CAMPAIGN_STATUS_VALUES.includes(body.status)) {
+    return NextResponse.json({ error: `status must be one of: ${CAMPAIGN_STATUS_VALUES.join(", ")}` }, { status: 400 });
   }
 
   const campaign = await prisma.campaign.create({
@@ -92,9 +104,8 @@ export async function DELETE(request: NextRequest) {
   try {
     await prisma.campaign.delete({ where: { id } });
   } catch (err) {
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") {
-      return NextResponse.json({ error: "Campaign not found" }, { status: 404 });
-    }
+    const response = prismaErrorResponse(err, "P2025", "Campaign not found");
+    if (response) return response;
     throw err;
   }
 

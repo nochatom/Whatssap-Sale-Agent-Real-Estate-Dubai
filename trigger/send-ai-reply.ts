@@ -6,6 +6,7 @@ import { invokeSkill, isRetryableProviderUnavailable, nextCloudflareQuotaResetAt
 import type { SkillInputMessage, SkillInvocationContext } from "@/skill/types";
 import { classifyBehaviorState } from "@/whatsapp/behavior-state";
 import { buildReplyIdempotencyKey } from "@/whatsapp/idempotency";
+import { resolveSender } from "@trigger/resolve-sender";
 import { maybeScheduleFollowUp } from "@trigger/schedule-followup";
 import { sendOutboundTask } from "@trigger/send-outbound";
 
@@ -29,10 +30,11 @@ export type SendAiReplyResult =
     };
 
 /**
- * Fires 2 minutes after handle-inbound schedules it (see handle-inbound.ts).
- * The Skill is invoked HERE, fresh, at fire time — never at the moment the
- * message arrived — so a decision is always based on the conversation as it
- * actually stands 2 minutes later, not a stale snapshot.
+ * Fires a randomized 3-5s after handle-inbound schedules it (see
+ * handle-inbound.ts's MIN_REPLY_DELAY_MS/MAX_REPLY_DELAY_MS). The Skill is
+ * invoked HERE, fresh, at fire time — never at the moment the message
+ * arrived — so a decision is always based on the conversation as it
+ * actually stands moments later, not a stale snapshot.
  *
  * Duplicate-reply prevention: if a second inbound message arrived in the
  * meantime, THIS run's triggeringMessageId is no longer the conversation's
@@ -185,18 +187,8 @@ export async function sendAiReply(payload: SendAiReplyPayload): Promise<SendAiRe
     return { evaluated: true, status: result.status, replyTriggered: false };
   }
 
-  let campaignId: string | undefined;
-  let senderPhoneNumberId: string;
-
-  if (conversation.campaignId) {
-    // Guaranteed non-null: conversation.campaignId was set, so campaignPromise
-    // above was the findUniqueOrThrow branch, not the null branch.
-    const campaign = prefetchedCampaign as NonNullable<typeof prefetchedCampaign>;
-    campaignId = campaign.id;
-    senderPhoneNumberId = campaign.senderPhoneNumberId;
-  } else if (conversation.senderPhoneNumberId) {
-    senderPhoneNumberId = conversation.senderPhoneNumberId;
-  } else {
+  const sender = await resolveSender(conversation, prefetchedCampaign);
+  if (!sender) {
     logger.log(
       "send-ai-reply: Skill returned a reply but there is no campaign and no known sender number, not sending",
       { conversationId: conversation.id },
@@ -208,6 +200,7 @@ export async function sendAiReply(payload: SendAiReplyPayload): Promise<SendAiRe
       replySkipped: "no campaign and no known sender number for this conversation",
     };
   }
+  const { campaignId, senderPhoneNumberId } = sender;
 
   const sendOutboundTriggerStartedAt = Date.now();
   await sendOutboundTask.trigger(
@@ -236,7 +229,7 @@ export async function sendAiReply(payload: SendAiReplyPayload): Promise<SendAiRe
 /**
  * Queue: concurrencyLimit 10 — independent conversations evaluate in
  * parallel. Callers MUST trigger with `concurrencyKey: conversationId` and
- * `delay: "2m"` — see handle-inbound.ts.
+ * a `delay` — see handle-inbound.ts's randomized 3-5s scheduling.
  */
 export const sendAiReplyTask = task({
   id: "send-ai-reply",

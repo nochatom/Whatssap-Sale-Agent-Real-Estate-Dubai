@@ -4,9 +4,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, CheckCheck, AlertCircle, Paperclip, Reply as ReplyIcon, RotateCcw, Loader2, Download, X, FileText, Copy as CopyIcon, Search, Archive, ArchiveRestore, MailOpen } from "lucide-react";
 
 import Badge from "../_components/Badge";
+import { runBulkAction } from "../_lib/bulk-action";
 import { colors, space, sectionStyle, fieldLabel, fieldInput, buttonStyle } from "../_lib/ui-tokens";
 import { CONVERSATION_STATUS_DISPLAY, type DerivedConversationStatus } from "../_lib/conversation-status";
-import MessageComposer, { type ComposerSendPayload, type ReplyPreviewTarget } from "./MessageComposer";
+import MessageComposer, { type ComposerSendPayload } from "./MessageComposer";
 
 export interface ConversationSummary {
   id: string;
@@ -150,9 +151,13 @@ function CopyMessageButton({ text, inverted }: { text: string; inverted: boolean
     <button
       type="button"
       onClick={async () => {
-        await navigator.clipboard.writeText(text);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1500);
+        try {
+          await navigator.clipboard.writeText(text);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        } catch {
+          // Clipboard access can be denied — fail quietly, same as CopyButton.
+        }
       }}
       aria-label="Copy message text"
       title="Copy message"
@@ -341,16 +346,11 @@ export default function InboxClient({ initialConversations }: { initialConversat
     if (!window.confirm(confirmMessage)) return;
 
     setBulkBusy(true);
-    const failures: string[] = [];
-    for (const id of ids) {
-      try {
-        const res = await fetch(`/api/conversations/${id}`, { method: "DELETE" });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error ?? "Failed to delete conversation");
-      } catch (err) {
-        failures.push(err instanceof Error ? err.message : String(err));
-      }
-    }
+    const failures = await runBulkAction(ids, async (id) => {
+      const res = await fetch(`/api/conversations/${id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to delete conversation");
+    });
     // Refetch rather than locally reasoning about which of the loop's calls
     // actually succeeded — simpler and always correct. Same view as currently open.
     try {
@@ -370,20 +370,14 @@ export default function InboxClient({ initialConversations }: { initialConversat
   }
 
   async function bulkPatch(ids: string[], body: Record<string, boolean>): Promise<string[]> {
-    const failures: string[] = [];
-    for (const id of ids) {
-      try {
-        const res = await fetch(`/api/conversations/${id}`, {
-          method: "PATCH",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(body),
-        });
-        if (!res.ok) throw new Error("Request failed");
-      } catch (err) {
-        failures.push(err instanceof Error ? err.message : String(err));
-      }
-    }
-    return failures;
+    return runBulkAction(ids, async (id) => {
+      const res = await fetch(`/api/conversations/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error("Request failed");
+    });
   }
 
   async function handleBulkMarkRead() {

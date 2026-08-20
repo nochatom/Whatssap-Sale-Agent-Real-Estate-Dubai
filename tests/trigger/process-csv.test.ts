@@ -5,10 +5,10 @@ vi.mock("@/csv/import", () => ({
   importLeadsFromCsv: (...args: unknown[]) => importLeadsFromCsvMock(...args),
 }));
 
-const conversationCreate = vi.fn();
+const conversationCreateMany = vi.fn();
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    conversation: { create: (...args: unknown[]) => conversationCreate(...args) },
+    conversation: { createMany: (...args: unknown[]) => conversationCreateMany(...args) },
   },
 }));
 
@@ -17,7 +17,7 @@ const { processCsv } = await import("@trigger/process-csv");
 describe("processCsv", () => {
   beforeEach(() => {
     importLeadsFromCsvMock.mockReset();
-    conversationCreate.mockReset().mockResolvedValue({ id: "conv_new" });
+    conversationCreateMany.mockReset().mockResolvedValue({ count: 0 });
   });
 
   afterEach(() => {
@@ -48,7 +48,7 @@ describe("processCsv", () => {
     expect(result).toEqual({ ...report, conversationsCreated: 0 });
     expect(fetchMock).toHaveBeenCalledWith("https://example.com/leads.csv");
     expect(importLeadsFromCsvMock).toHaveBeenCalledWith(csvText, { defaultCountry: "AE" });
-    expect(conversationCreate).not.toHaveBeenCalled();
+    expect(conversationCreateMany).not.toHaveBeenCalled();
   });
 
   it("throws without calling importLeadsFromCsv when the fetch fails", async () => {
@@ -82,12 +82,12 @@ describe("processCsv", () => {
     });
 
     expect(result.conversationsCreated).toBe(2);
-    expect(conversationCreate).toHaveBeenCalledTimes(2);
-    expect(conversationCreate).toHaveBeenCalledWith({
-      data: { leadId: "lead_1", campaignId: "camp_1" },
-    });
-    expect(conversationCreate).toHaveBeenCalledWith({
-      data: { leadId: "lead_2", campaignId: "camp_1" },
+    expect(conversationCreateMany).toHaveBeenCalledTimes(1);
+    expect(conversationCreateMany).toHaveBeenCalledWith({
+      data: [
+        { leadId: "lead_1", campaignId: "camp_1" },
+        { leadId: "lead_2", campaignId: "camp_1" },
+      ],
     });
   });
 
@@ -107,6 +107,6 @@ describe("processCsv", () => {
     });
 
     expect(result.conversationsCreated).toBe(0);
-    expect(conversationCreate).not.toHaveBeenCalled();
+    expect(conversationCreateMany).not.toHaveBeenCalled();
   });
 });

@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Prisma } from "@prisma/client";
 import type { CountryCode } from "libphonenumber-js";
 
 import { prisma } from "@/lib/prisma";
+import { prismaErrorResponse } from "@/lib/prisma-errors";
 import { normalizePhoneToE164 } from "@/csv/phone";
 
 /**
@@ -81,9 +81,8 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (err) {
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-      return NextResponse.json({ error: "A lead with this phone number already exists" }, { status: 409 });
-    }
+    const response = prismaErrorResponse(err, "P2002", "A lead with this phone number already exists", 409);
+    if (response) return response;
     throw err;
   }
 
@@ -123,9 +122,8 @@ export async function DELETE(request: NextRequest) {
       prisma.lead.delete({ where: { id } }),
     ]);
   } catch (err) {
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") {
-      return NextResponse.json({ error: "Lead not found" }, { status: 404 });
-    }
+    const response = prismaErrorResponse(err, "P2025", "Lead not found");
+    if (response) return response;
     throw err;
   }
 

@@ -1,9 +1,6 @@
 import { prisma } from "@/lib/prisma";
 
-import { deriveConversationStatus, CONVERSATION_STATUS_DISPLAY, type DerivedConversationStatus } from "./conversation-status";
-
-export { deriveConversationStatus, CONVERSATION_STATUS_DISPLAY };
-export type { DerivedConversationStatus };
+import { deriveConversationStatus, type DerivedConversationStatus } from "./conversation-status";
 
 export interface RecentConversation {
   id: string;

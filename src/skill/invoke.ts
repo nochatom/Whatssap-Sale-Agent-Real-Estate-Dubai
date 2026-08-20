@@ -95,7 +95,7 @@ export async function invokeSkill(
 
     try {
       const fallbackResult = await invokeAnthropic(context, SKILL_MARKDOWN);
-      console.error("invokeSkill: Anthropic fallback succeeded", { status: fallbackResult.status });
+      console.log("invokeSkill: Anthropic fallback succeeded", { status: fallbackResult.status });
       return fallbackResult;
     } catch (fallbackErr) {
       const fallbackReason = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);

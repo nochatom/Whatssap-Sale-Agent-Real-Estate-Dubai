@@ -1,13 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const findUnique = vi.fn();
-const create = vi.fn();
+const findMany = vi.fn();
+const createMany = vi.fn();
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     lead: {
-      findUnique: (...args: unknown[]) => findUnique(...args),
-      create: (...args: unknown[]) => create(...args),
+      findMany: (...args: unknown[]) => findMany(...args),
+      createMany: (...args: unknown[]) => createMany(...args),
     },
   },
 }));
@@ -16,17 +16,15 @@ import { importLeadsFromCsv } from "@/csv/import";
 
 describe("importLeadsFromCsv", () => {
   beforeEach(() => {
-    findUnique.mockReset();
-    create.mockReset();
+    findMany.mockReset();
+    createMany.mockReset();
   });
 
   it("creates exactly one lead from a file with a duplicate row and an invalid phone, naming both rejections", async () => {
-    findUnique.mockResolvedValue(null); // no pre-existing leads
-    let nextId = 1;
-    create.mockImplementation(async ({ data }: { data: { phoneE164: string } }) => ({
-      id: `lead_${nextId++}`,
-      phoneE164: data.phoneE164,
-    }));
+    findMany
+      .mockResolvedValueOnce([]) // pass 2: nothing pre-existing
+      .mockResolvedValueOnce([{ id: "lead_1", phoneE164: "+971501234567" }]); // pass 3: recover created id
+    createMany.mockResolvedValue({ count: 1 });
 
     const csv = [
       "phone,name",
@@ -40,7 +38,11 @@ describe("importLeadsFromCsv", () => {
     expect(report.totalRows).toBe(3);
     expect(report.created).toBe(1);
     expect(report.rejected).toBe(2);
-    expect(create).toHaveBeenCalledTimes(1);
+    expect(createMany).toHaveBeenCalledTimes(1);
+    expect(createMany).toHaveBeenCalledWith({
+      data: [{ phoneE164: "+971501234567", name: "Alice", optedIn: true }],
+      skipDuplicates: true,
+    });
 
     const duplicateResult = report.results.find((r) => r.row === 3);
     expect(duplicateResult?.status).toBe("duplicate_in_file");
@@ -55,7 +57,7 @@ describe("importLeadsFromCsv", () => {
   });
 
   it("rejects a row whose phone already exists in the database", async () => {
-    findUnique.mockResolvedValue({ id: "existing_lead", phoneE164: "+971501234567" });
+    findMany.mockResolvedValueOnce([{ id: "existing_lead", phoneE164: "+971501234567" }]);
 
     const csv = ["phone,name", "+971 50 123 4567,Alice"].join("\n");
     const report = await importLeadsFromCsv(csv);
@@ -63,14 +65,15 @@ describe("importLeadsFromCsv", () => {
     expect(report.created).toBe(0);
     expect(report.results[0].status).toBe("duplicate_existing");
     expect(report.results[0].leadId).toBe("existing_lead");
-    expect(create).not.toHaveBeenCalled();
+    expect(createMany).not.toHaveBeenCalled();
   });
 
   it("returns an empty report for a file with only a header row", async () => {
-    findUnique.mockResolvedValue(null);
     const report = await importLeadsFromCsv("phone,name\n");
     expect(report.totalRows).toBe(0);
     expect(report.created).toBe(0);
     expect(report.rejected).toBe(0);
+    expect(findMany).not.toHaveBeenCalled();
+    expect(createMany).not.toHaveBeenCalled();
   });
 });

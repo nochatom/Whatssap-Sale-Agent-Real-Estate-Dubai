@@ -36,9 +36,13 @@ export async function linkNewLeadsToCampaign(
     .filter((r) => r.status === "created" && r.leadId)
     .map((r) => r.leadId as string);
 
-  for (const leadId of createdLeadIds) {
-    await prisma.conversation.create({ data: { leadId, campaignId } });
+  if (createdLeadIds.length === 0) {
+    return 0;
   }
+
+  await prisma.conversation.createMany({
+    data: createdLeadIds.map((leadId) => ({ leadId, campaignId })),
+  });
 
   return createdLeadIds.length;
 }

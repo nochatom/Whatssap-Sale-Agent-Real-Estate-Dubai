@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { prisma } from "@/lib/prisma";
 import { buildCampaignOpenerIdempotencyKey } from "@/whatsapp/idempotency";
+import { classifySendError } from "@/whatsapp/send-error";
 import { sendOutbound } from "@trigger/send-outbound";
 
 interface SendRequestBody {
@@ -19,14 +20,10 @@ interface SendRequestBody {
  * hard-throw unless SENDING_ENABLED === "true", which stays unset.
  *
  * Known "expected in test mode" throw messages are classified separately
- * from genuine errors so the UI can show them as a correct safety block
- * rather than a server failure.
+ * from genuine errors (see classifySendError, shared with the reply route)
+ * so the UI can show them as a correct safety block rather than a server
+ * failure.
  */
-const EXPECTED_TEST_MODE_BLOCKS = [
-  "WHATSAPP_ACCESS_TOKEN is not set",
-  "WHATSAPP_TEMPLATE_LANGUAGE is not set",
-  "Outbound sending is disabled",
-];
 
 export async function POST(request: NextRequest) {
   let body: SendRequestBody;
@@ -69,11 +66,10 @@ export async function POST(request: NextRequest) {
     // reported factually either way, never phrased as a delivery guarantee.
     return NextResponse.json({ testMode: true, outcome: "returned", result });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const isExpectedBlock = EXPECTED_TEST_MODE_BLOCKS.some((known) => message.includes(known));
+    const classified = classifySendError(error);
     return NextResponse.json(
-      { testMode: true, outcome: isExpectedBlock ? "blocked_before_send" : "error", message },
-      { status: isExpectedBlock ? 200 : 500 },
+      { testMode: true, outcome: classified.outcome, message: classified.message },
+      { status: classified.status },
     );
   }
 }

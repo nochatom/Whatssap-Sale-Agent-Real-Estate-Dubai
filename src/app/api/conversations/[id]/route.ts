@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
+import { prismaErrorResponse } from "@/lib/prisma-errors";
 
 /**
  * Deletes a Conversation and, explicitly, all of its history — FollowUp,
@@ -23,9 +23,8 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
       prisma.conversation.delete({ where: { id } }),
     ]);
   } catch (err) {
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") {
-      return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
-    }
+    const response = prismaErrorResponse(err, "P2025", "Conversation not found");
+    if (response) return response;
     throw err;
   }
 
@@ -68,9 +67,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const conversation = await prisma.conversation.update({ where: { id }, data });
     return NextResponse.json({ id: conversation.id, readAt: conversation.readAt, archivedAt: conversation.archivedAt });
   } catch (err) {
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") {
-      return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
-    }
+    const response = prismaErrorResponse(err, "P2025", "Conversation not found");
+    if (response) return response;
     throw err;
   }
 }

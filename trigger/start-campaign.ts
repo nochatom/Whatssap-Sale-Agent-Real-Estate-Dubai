@@ -47,24 +47,32 @@ export async function startCampaign(payload: StartCampaignPayload): Promise<Star
     include: { lead: true },
   });
 
-  for (const [index, conversation] of conversations.entries()) {
-    const delaySeconds = index * CAMPAIGN_SEND_SPACING_SECONDS;
+  // Each .trigger() call only schedules a future send (via `delay`) and is
+  // independent of every other one — none of them depend on a prior call's
+  // result, so they're fired concurrently instead of awaited one at a time.
+  // The actual sends still land 90s apart on Trigger.dev's side regardless,
+  // since that's enforced by each call's own `delay`, not by how fast this
+  // loop issues the scheduling requests.
+  await Promise.all(
+    conversations.map((conversation, index) => {
+      const delaySeconds = index * CAMPAIGN_SEND_SPACING_SECONDS;
 
-    await sendOutboundTask.trigger(
-      {
-        conversationId: conversation.id,
-        campaignId: campaign.id,
-        leadId: conversation.leadId,
-        senderPhoneNumberId: campaign.senderPhoneNumberId,
-        idempotencyKey: buildCampaignOpenerIdempotencyKey(campaign.id, conversation.leadId),
-        isTemplate: true,
-      },
-      {
-        concurrencyKey: campaign.senderPhoneNumberId,
-        ...(delaySeconds > 0 ? { delay: `${delaySeconds}s` } : {}),
-      },
-    );
-  }
+      return sendOutboundTask.trigger(
+        {
+          conversationId: conversation.id,
+          campaignId: campaign.id,
+          leadId: conversation.leadId,
+          senderPhoneNumberId: campaign.senderPhoneNumberId,
+          idempotencyKey: buildCampaignOpenerIdempotencyKey(campaign.id, conversation.leadId),
+          isTemplate: true,
+        },
+        {
+          concurrencyKey: campaign.senderPhoneNumberId,
+          ...(delaySeconds > 0 ? { delay: `${delaySeconds}s` } : {}),
+        },
+      );
+    }),
+  );
 
   logger.log("start-campaign: openers scheduled", {
     campaignId: campaign.id,

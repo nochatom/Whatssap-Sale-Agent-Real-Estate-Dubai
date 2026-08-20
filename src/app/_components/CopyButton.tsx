@@ -15,9 +15,15 @@ export default function CopyButton({ value }: { value: string }) {
 
   async function handleCopy(e: React.MouseEvent) {
     e.stopPropagation();
-    await navigator.clipboard.writeText(value);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard access can be denied (non-secure context, permission,
+      // lost focus) — fail quietly rather than an unhandled rejection;
+      // `copied` simply never flips, so the button just shows no feedback.
+    }
   }
 
   return (

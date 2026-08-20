@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { invokeSkill } from "@/skill/invoke";
 import type { SkillDecision, SkillInputMessage, SkillInvocationContext } from "@/skill/types";
 import { buildFollowUpIdempotencyKey } from "@/whatsapp/idempotency";
+import { resolveSender } from "@trigger/resolve-sender";
 import { sendOutboundTask } from "@trigger/send-outbound";
 
 export interface ScheduleFollowUpPayload {
@@ -242,16 +243,8 @@ export async function runScheduledFollowUp(
     return { actioned: false, reason: "Skill did not return a reply; not auto-rescheduling" };
   }
 
-  let campaignId: string | undefined;
-  let senderPhoneNumberId: string;
-
-  if (conversation.campaignId) {
-    const campaign = await prisma.campaign.findUniqueOrThrow({ where: { id: conversation.campaignId } });
-    campaignId = campaign.id;
-    senderPhoneNumberId = campaign.senderPhoneNumberId;
-  } else if (conversation.senderPhoneNumberId) {
-    senderPhoneNumberId = conversation.senderPhoneNumberId;
-  } else {
+  const sender = await resolveSender(conversation);
+  if (!sender) {
     await prisma.followUp.update({ where: { id: followUp.id }, data: { status: "CANCELLED" } });
     logger.log("schedule-followup: cannot send, no campaign and no known sender number", {
       conversationId: conversation.id,
@@ -262,13 +255,13 @@ export async function runScheduledFollowUp(
   await sendOutboundTask.trigger(
     {
       conversationId: conversation.id,
-      campaignId,
+      campaignId: sender.campaignId,
       leadId: payload.leadId,
-      senderPhoneNumberId,
+      senderPhoneNumberId: sender.senderPhoneNumberId,
       idempotencyKey: buildFollowUpIdempotencyKey(followUp.id),
       body: result.decision.recommendedReply.text,
     },
-    { concurrencyKey: senderPhoneNumberId },
+    { concurrencyKey: sender.senderPhoneNumberId },
   );
 
   await prisma.followUp.update({ where: { id: followUp.id }, data: { status: "SENT" } });

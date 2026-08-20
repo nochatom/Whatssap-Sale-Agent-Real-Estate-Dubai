@@ -2,44 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { prisma } from "@/lib/prisma";
 import { buildManualReplyIdempotencyKey } from "@/whatsapp/idempotency";
+import { classifySendError, sanitizeProviderError } from "@/whatsapp/send-error";
 import { uploadMedia } from "@/whatsapp/transport";
 import { MEDIA_LIMITS, mediaKindForMimeType } from "@/whatsapp/types";
 import { sendOutbound, type SendOutboundMedia } from "@trigger/send-outbound";
-
-// Same list as /api/leads/send — known "expected in test/dev mode" throw
-// messages, classified separately from genuine errors so the UI shows them
-// as a correct safety block (200) rather than a server failure (500).
-const EXPECTED_TEST_MODE_BLOCKS = [
-  "WHATSAPP_ACCESS_TOKEN is not set",
-  "WHATSAPP_TEMPLATE_LANGUAGE is not set",
-  "Outbound sending is disabled",
-];
-
-/**
- * Strips a thrown error down to a safe, human-readable message. Meta's own
- * `error.message` field (e.g. "Recipient phone number not in allowed list")
- * is the only thing ever extracted from a raw provider error body — never
- * the full JSON envelope, error codes, fbtrace_id, or anything else that
- * body might contain. Never touches tokens/phone-number-ids directly since
- * this only ever reads a thrown Error's message text, never request headers
- * or env vars.
- */
-function sanitizeProviderError(error: unknown): string {
-  const raw = error instanceof Error ? error.message : String(error);
-  const jsonStart = raw.indexOf("{");
-  if (jsonStart === -1) return raw;
-
-  try {
-    const parsed = JSON.parse(raw.slice(jsonStart)) as { error?: { message?: string } };
-    const metaMessage = parsed.error?.message;
-    if (typeof metaMessage === "string" && metaMessage) {
-      return `Message failed to send: ${metaMessage}`;
-    }
-  } catch {
-    // fall through
-  }
-  return "Message failed to send — the provider rejected the request.";
-}
 
 /**
  * Reply from the Inbox composer — text, or media (image/video/document/
@@ -134,11 +100,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     });
     return NextResponse.json({ outcome: "returned", result });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const isExpectedBlock = EXPECTED_TEST_MODE_BLOCKS.some((known) => message.includes(known));
+    const classified = classifySendError(error);
     return NextResponse.json(
-      { outcome: isExpectedBlock ? "blocked_before_send" : "error", message: isExpectedBlock ? message : sanitizeProviderError(error) },
-      { status: isExpectedBlock ? 200 : 500 },
+      { outcome: classified.outcome, message: classified.message },
+      { status: classified.status },
     );
   }
 }

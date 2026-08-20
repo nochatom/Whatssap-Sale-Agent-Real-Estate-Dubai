@@ -6,6 +6,7 @@ import Link from "next/link";
 
 import Badge from "../_components/Badge";
 import WorkflowStepper from "../_components/WorkflowStepper";
+import { runBulkAction } from "../_lib/bulk-action";
 import { colors, space, sectionStyle, fieldLabel, fieldInput, buttonStyle } from "../_lib/ui-tokens";
 
 interface Lead {
@@ -103,8 +104,7 @@ export default function SelectLeadsClient() {
 
     setDeleting(true);
     setError(null);
-    const failures: string[] = [];
-    for (const id of ids) {
+    const failures = await runBulkAction(ids, async (id) => {
       try {
         const res = await fetch(`/api/leads?id=${encodeURIComponent(id)}`, { method: "DELETE" });
         const data = await res.json();
@@ -117,9 +117,9 @@ export default function SelectLeadsClient() {
         });
       } catch (err) {
         const lead = leads.find((l) => l.id === id);
-        failures.push(`${lead?.phoneE164 ?? id}: ${err instanceof Error ? err.message : String(err)}`);
+        throw new Error(`${lead?.phoneE164 ?? id}: ${err instanceof Error ? err.message : String(err)}`);
       }
-    }
+    });
     if (failures.length > 0) setError(failures.join(" · "));
     setDeleting(false);
   }
