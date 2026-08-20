@@ -15,6 +15,37 @@ const PROVIDERS: Record<string, SkillProvider> = {
   cloudflare: invokeCloudflare,
 };
 
+// Prefix identifying a parse_failure caused specifically by "no AI provider
+// was reachable" (as opposed to a bad/unparseable output from a provider
+// that DID respond). Only this specific failure is worth automatically
+// retrying later — see isRetryableProviderUnavailable / send-ai-reply.ts.
+const PROVIDER_UNAVAILABLE_RETRY_MARKER = "provider_unavailable_retry_after_quota_reset";
+
+/**
+ * True only when invokeSkill() failed because no AI provider could be
+ * reached at all (Cloudflare quota-exhausted and no usable fallback) — never
+ * for a provider that responded but produced bad output. send-ai-reply.ts
+ * uses this to decide whether to reschedule the same message for later
+ * instead of treating it as a terminal failure.
+ */
+export function isRetryableProviderUnavailable(result: SkillInvocationResult): boolean {
+  return result.status === "parse_failure" && result.reason.startsWith(PROVIDER_UNAVAILABLE_RETRY_MARKER);
+}
+
+/**
+ * Cloudflare's free-tier neuron quota resets on a fixed 00:00 UTC
+ * calendar-day boundary, not a rolling 24h window from the failure
+ * (confirmed via developers.cloudflare.com/workers-ai/platform/limits/).
+ * A small random jitter (0-5 min) spreads out a backlog of messages that
+ * all failed on the same day, instead of every deferred retry hammering
+ * Cloudflare at the exact same instant the quota resets.
+ */
+export function nextCloudflareQuotaResetAt(now: Date = new Date()): Date {
+  const next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0, 0));
+  const jitterMs = Math.random() * 5 * 60_000;
+  return new Date(next.getTime() + jitterMs);
+}
+
 /**
  * AI_PROVIDER selects which underlying AI API generates replies —
  * "cloudflare" or "anthropic". Unset or unrecognized falls back to
@@ -53,11 +84,11 @@ export async function invokeSkill(
 
     if (!process.env.ANTHROPIC_API_KEY) {
       console.error(
-        "invokeSkill: no fallback provider available (ANTHROPIC_API_KEY not set) — cannot generate a reply for this message",
+        "invokeSkill: no fallback provider available (ANTHROPIC_API_KEY not set) — will retry this message after Cloudflare's daily quota reset instead of generating a reply now",
       );
       return {
         status: "parse_failure",
-        reason: `provider_unavailable: ${err.message}; no fallback provider configured`,
+        reason: `${PROVIDER_UNAVAILABLE_RETRY_MARKER}: ${err.message}; no fallback provider configured`,
         rawOutput: "",
       };
     }

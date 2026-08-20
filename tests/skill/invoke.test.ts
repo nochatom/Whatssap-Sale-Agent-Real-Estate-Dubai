@@ -15,7 +15,7 @@ vi.mock("@/skill/providers/anthropic", () => ({
   invokeAnthropic: (...args: unknown[]) => invokeAnthropicMock(...args),
 }));
 
-const { invokeSkill } = await import("@/skill/invoke");
+const { invokeSkill, isRetryableProviderUnavailable, nextCloudflareQuotaResetAt } = await import("@/skill/invoke");
 const { CloudflareQuotaExceededError } = await import("@/skill/providers/cloudflare");
 
 const CONTEXT = {
@@ -117,5 +117,55 @@ describe("invokeSkill — Cloudflare quota fallback", () => {
       expect(result.reason).toMatch(/provider_unavailable/);
       expect(result.reason).toMatch(/fallback to Anthropic also failed/);
     }
+  });
+
+  it("marks the no-fallback-configured failure as retryable", async () => {
+    delete process.env.ANTHROPIC_API_KEY;
+    invokeCloudflareMock.mockRejectedValueOnce(new CloudflareQuotaExceededError(new Error("429")));
+
+    const result = await invokeSkill(CONTEXT);
+
+    expect(isRetryableProviderUnavailable(result)).toBe(true);
+  });
+
+  it("does NOT mark an Anthropic-also-failed result as retryable (retrying at Cloudflare's reset wouldn't help)", async () => {
+    process.env.ANTHROPIC_API_KEY = "sk-test-key";
+    invokeCloudflareMock.mockRejectedValueOnce(new CloudflareQuotaExceededError(new Error("429")));
+    invokeAnthropicMock.mockRejectedValueOnce(new Error("Anthropic: insufficient credit"));
+
+    const result = await invokeSkill(CONTEXT);
+
+    expect(isRetryableProviderUnavailable(result)).toBe(false);
+  });
+
+  it("does NOT mark a successful result as retryable", () => {
+    expect(isRetryableProviderUnavailable(SUCCESS_RESULT)).toBe(false);
+  });
+
+  it("does NOT mark an ordinary parse_failure (bad output) as retryable", () => {
+    expect(
+      isRetryableProviderUnavailable({ status: "parse_failure", reason: "extraction call failed: bad json", rawOutput: "x" }),
+    ).toBe(false);
+  });
+});
+
+describe("nextCloudflareQuotaResetAt", () => {
+  it("returns the next 00:00 UTC boundary, a few minutes of jitter later", () => {
+    const now = new Date("2026-08-20T15:30:00.000Z");
+    const resetAt = nextCloudflareQuotaResetAt(now);
+
+    const expectedFloor = new Date("2026-08-21T00:00:00.000Z").getTime();
+    const expectedCeiling = expectedFloor + 5 * 60_000;
+
+    expect(resetAt.getTime()).toBeGreaterThanOrEqual(expectedFloor);
+    expect(resetAt.getTime()).toBeLessThanOrEqual(expectedCeiling);
+  });
+
+  it("rolls over correctly when called right before midnight UTC", () => {
+    const now = new Date("2026-08-20T23:59:00.000Z");
+    const resetAt = nextCloudflareQuotaResetAt(now);
+
+    expect(resetAt.getTime()).toBeGreaterThanOrEqual(new Date("2026-08-21T00:00:00.000Z").getTime());
+    expect(resetAt.getUTCDate()).toBe(21);
   });
 });

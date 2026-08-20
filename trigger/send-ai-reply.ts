@@ -2,7 +2,7 @@ import { logger, task } from "@trigger.dev/sdk/v3";
 import { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
-import { invokeSkill } from "@/skill/invoke";
+import { invokeSkill, isRetryableProviderUnavailable, nextCloudflareQuotaResetAt } from "@/skill/invoke";
 import type { SkillInputMessage, SkillInvocationContext } from "@/skill/types";
 import { classifyBehaviorState } from "@/whatsapp/behavior-state";
 import { buildReplyIdempotencyKey } from "@/whatsapp/idempotency";
@@ -23,6 +23,9 @@ export type SendAiReplyResult =
       replyTriggered: boolean;
       replySkipped?: string;
       followUpScheduled?: boolean;
+      /** Set when no AI provider was reachable and this message was rescheduled
+       * for after Cloudflare's daily quota reset instead of being dropped. */
+      retryScheduledAt?: string;
     };
 
 /**
@@ -138,6 +141,27 @@ export async function sendAiReply(payload: SendAiReplyPayload): Promise<SendAiRe
   });
 
   if (result.status !== "success") {
+    if (isRetryableProviderUnavailable(result)) {
+      const retryAt = nextCloudflareQuotaResetAt();
+      await sendAiReplyTask.trigger(
+        {
+          conversationId: payload.conversationId,
+          triggeringMessageId: payload.triggeringMessageId,
+          triggeringWaMessageId: payload.triggeringWaMessageId,
+        },
+        { delay: retryAt, concurrencyKey: payload.conversationId },
+      );
+      logger.log("send-ai-reply: no AI provider reachable, rescheduled after Cloudflare's quota reset", {
+        conversationId: conversation.id,
+        retryAt: retryAt.toISOString(),
+      });
+      return {
+        evaluated: true,
+        status: result.status,
+        replyTriggered: false,
+        retryScheduledAt: retryAt.toISOString(),
+      };
+    }
     return { evaluated: true, status: result.status, replyTriggered: false };
   }
 

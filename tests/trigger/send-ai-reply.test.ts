@@ -20,9 +20,15 @@ vi.mock("@/lib/prisma", () => ({
 }));
 
 const invokeSkillMock = vi.fn();
-vi.mock("@/skill/invoke", () => ({
-  invokeSkill: (...args: unknown[]) => invokeSkillMock(...args),
-}));
+// isRetryableProviderUnavailable / nextCloudflareQuotaResetAt stay real (pure,
+// deterministic-enough functions) — only invokeSkill itself is mocked.
+vi.mock("@/skill/invoke", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/skill/invoke")>();
+  return {
+    ...actual,
+    invokeSkill: (...args: unknown[]) => invokeSkillMock(...args),
+  };
+});
 
 const sendOutboundTrigger = vi.fn();
 vi.mock("@trigger/send-outbound", () => ({
@@ -33,6 +39,19 @@ const maybeScheduleFollowUpMock = vi.fn();
 vi.mock("@trigger/schedule-followup", () => ({
   maybeScheduleFollowUp: (...args: unknown[]) => maybeScheduleFollowUpMock(...args),
 }));
+
+// sendAiReplyTask is defined via task(...) inside send-ai-reply.ts itself, so
+// it can't be mocked by mocking an external module the way sendOutboundTask
+// is above — task() itself is replaced so the resulting task object's
+// .trigger() is a controllable mock instead of a real Trigger.dev API call.
+const sendAiReplyTrigger = vi.fn();
+vi.mock("@trigger.dev/sdk/v3", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@trigger.dev/sdk/v3")>();
+  return {
+    ...actual,
+    task: (config: { id: string }) => ({ id: config.id, trigger: (...args: unknown[]) => sendAiReplyTrigger(...args) }),
+  };
+});
 
 const { sendAiReply } = await import("@trigger/send-ai-reply");
 
@@ -82,6 +101,7 @@ describe("sendAiReply", () => {
     invokeSkillMock.mockReset();
     sendOutboundTrigger.mockReset().mockResolvedValue({ id: "run_x" });
     maybeScheduleFollowUpMock.mockReset().mockResolvedValue({ scheduled: false, reason: "n/a" });
+    sendAiReplyTrigger.mockReset().mockResolvedValue({ id: "run_retry" });
   });
 
   it("aborts without invoking the Skill when a newer inbound message has arrived", async () => {
@@ -285,5 +305,51 @@ describe("sendAiReply", () => {
     expect(createArgs.data.parseStatus).toBe("PARSE_FAILURE");
     expect(createArgs.data.parsedDecision).toBe(Prisma.JsonNull);
     expect(sendOutboundTrigger).not.toHaveBeenCalled();
+  });
+
+  it("reschedules the same message after Cloudflare's quota reset instead of dropping it when no AI provider was reachable", async () => {
+    invokeSkillMock.mockResolvedValue({
+      status: "parse_failure",
+      reason: "provider_unavailable_retry_after_quota_reset: Cloudflare Workers AI rate-limited or quota-exceeded: 429; no fallback provider configured",
+      rawOutput: "",
+    });
+
+    const result = await sendAiReply(PAYLOAD);
+
+    expect(result.evaluated).toBe(true);
+    if (result.evaluated) {
+      expect(result.status).toBe("parse_failure");
+      expect(result.replyTriggered).toBe(false);
+      expect(typeof result.retryScheduledAt).toBe("string");
+    }
+
+    // The AiDecision audit trail is still persisted for this failed attempt.
+    expect(aiDecisionCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ parseStatus: "PARSE_FAILURE" }) }),
+    );
+
+    // Rescheduled with the exact same payload so the re-run naturally
+    // re-checks staleness at its new fire time, same as the original schedule.
+    expect(sendAiReplyTrigger).toHaveBeenCalledOnce();
+    const [retryPayload, retryOptions] = sendAiReplyTrigger.mock.calls[0];
+    expect(retryPayload).toEqual(PAYLOAD);
+    expect(retryOptions.concurrencyKey).toBe("conv_1");
+    expect(retryOptions.delay).toBeInstanceOf(Date);
+    expect((retryOptions.delay as Date).getTime()).toBeGreaterThan(Date.now());
+
+    expect(sendOutboundTrigger).not.toHaveBeenCalled();
+  });
+
+  it("does NOT reschedule an ordinary parse_failure (bad output, not a reachability failure)", async () => {
+    invokeSkillMock.mockResolvedValue({
+      status: "parse_failure",
+      reason: "extraction output was not valid JSON",
+      rawOutput: "garbled",
+    });
+
+    const result = await sendAiReply(PAYLOAD);
+
+    expect(result).toEqual({ evaluated: true, status: "parse_failure", replyTriggered: false });
+    expect(sendAiReplyTrigger).not.toHaveBeenCalled();
   });
 });
