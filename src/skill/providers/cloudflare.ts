@@ -12,6 +12,27 @@ import type { SkillProvider } from "./types";
 const MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 
 /**
+ * Thrown instead of returning a parse_failure when Cloudflare rejects the
+ * request with a 429 (rate limit or the 10,000-neuron/day free-tier quota,
+ * error code 4006 — both surface as OpenAI.RateLimitError). This is an
+ * availability failure, not a bad-output failure: retrying against the same
+ * exhausted daily quota cannot succeed until Cloudflare's 00:00 UTC reset,
+ * so invoke.ts catches this specific type to route to a fallback provider
+ * instead of burning retries or crashing the task.
+ */
+export class CloudflareQuotaExceededError extends Error {
+  constructor(cause: unknown) {
+    const causeMessage = cause instanceof Error ? cause.message : String(cause);
+    super(`Cloudflare Workers AI rate-limited or quota-exceeded: ${causeMessage}`);
+    this.name = "CloudflareQuotaExceededError";
+  }
+}
+
+function isRateLimitError(err: unknown): boolean {
+  return err instanceof OpenAI.RateLimitError;
+}
+
+/**
  * Cloudflare Workers AI exposes an OpenAI-compatible endpoint, so the same
  * `openai` SDK used for the (now-removed) NVIDIA provider is reused here
  * too, just repointed at Cloudflare's baseURL. CLOUDFLARE_ACCOUNT_ID and
@@ -36,14 +57,25 @@ export const invokeCloudflare: SkillProvider = async (context, skillMarkdown) =>
   const openai = client();
   const t0 = Date.now();
 
-  const skillResponse = await openai.chat.completions.create({
-    model: MODEL,
-    max_tokens: 2048,
-    messages: [
-      { role: "system", content: skillMarkdown },
-      { role: "user", content: buildSkillInput(context) },
-    ],
-  });
+  let skillResponse: OpenAI.Chat.Completions.ChatCompletion;
+  try {
+    skillResponse = await openai.chat.completions.create({
+      model: MODEL,
+      max_tokens: 2048,
+      messages: [
+        { role: "system", content: skillMarkdown },
+        { role: "user", content: buildSkillInput(context) },
+      ],
+    });
+  } catch (err) {
+    if (isRateLimitError(err)) {
+      throw new CloudflareQuotaExceededError(err);
+    }
+    // Any other failure (network blip, 5xx, etc.) keeps the pre-existing
+    // behavior of propagating uncaught, so Trigger.dev's normal task-level
+    // retry still applies for genuinely transient errors.
+    throw err;
+  }
   const proseCallMs = Date.now() - t0;
 
   const prose = skillResponse.choices[0]?.message?.content ?? "";
@@ -78,6 +110,9 @@ export const invokeCloudflare: SkillProvider = async (context, skillMarkdown) =>
     });
     extractionText = extractionResponse.choices[0]?.message?.content ?? "";
   } catch (err) {
+    if (isRateLimitError(err)) {
+      throw new CloudflareQuotaExceededError(err);
+    }
     const reason = err instanceof Error ? err.message : String(err);
     return {
       status: "parse_failure",
