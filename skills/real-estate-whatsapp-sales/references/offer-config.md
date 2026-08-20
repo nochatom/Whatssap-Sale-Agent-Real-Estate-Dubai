@@ -19,15 +19,9 @@ One video per property. 30–60 seconds. Built entirely from the client's existi
 
 ## Pricing
 
-Volume brackets on one identical product — not quality tiers. Nothing is removed at the lower price point; the only variable is how many properties are ordered at once.
+**$149 USD per video/property.** Flat — not tiered by volume or property count. This is the official starting price, and the only number to open with.
 
-| Properties ordered | Price per property |
-|---|---|
-| 1–2 | AED 500 |
-| 3–4 | AED 400 |
-| 5+ | AED 350 |
-
-Never frame the lower brackets as a stripped-down or lower-quality option — it is a volume discount on the same product. Never negotiate a price outside this table.
+State it as-is: never rounded down, never pre-discounted, never framed as "starting from" a lower figure. Any number below $149 is a negotiated outcome, not a default — reached only by following `references/pricing-and-negotiation.md`, never invented or offered unprompted.
 
 ## Demo video
 
