@@ -8,6 +8,7 @@ import { getRecentConversations } from "./_lib/recent-conversations";
 import { CONVERSATION_STATUS_DISPLAY } from "./_lib/conversation-status";
 import { getRecentActivity, relativeTime } from "./_lib/activity";
 import Badge from "./_components/Badge";
+import ClearDashboardDataButton from "./_components/ClearDashboardDataButton";
 
 // Queries the DB on every load — must render per-request, not be statically
 // prerendered at build time, when no DATABASE_URL is available.
@@ -53,11 +54,14 @@ export default async function DashboardPage() {
 
   return (
     <main style={{ padding: `${space.lg}px ${space.md}px`, maxWidth: 1280, margin: "0 auto" }}>
-      <div style={{ marginBottom: space.md }}>
-        <h1 style={{ fontSize: 26, fontWeight: 600, letterSpacing: "-0.2px", margin: `0 0 4px` }}>Dashboard Overview</h1>
-        <p style={{ color: colors.mutedText, fontSize: 13, margin: 0 }}>
-          Real-time leads, automated AI routing, and WhatsApp delivery logs.
-        </p>
+      <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "flex-start", gap: space.sm, marginBottom: space.md }}>
+        <div>
+          <h1 style={{ fontSize: 26, fontWeight: 600, letterSpacing: "-0.2px", margin: `0 0 4px` }}>Dashboard Overview</h1>
+          <p style={{ color: colors.mutedText, fontSize: 13, margin: 0 }}>
+            Real-time leads, automated AI routing, and WhatsApp delivery logs.
+          </p>
+        </div>
+        <ClearDashboardDataButton />
       </div>
 
       {/* Metric grid */}
