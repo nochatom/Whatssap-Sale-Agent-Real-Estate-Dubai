@@ -23,6 +23,8 @@ One video per property. 30–60 seconds. Built entirely from the client's existi
 
 State it as-is: never rounded down, never pre-discounted, never framed as "starting from" a lower figure. Any number below $149 is a negotiated outcome, not a default — reached only by following `references/pricing-and-negotiation.md`, never invented or offered unprompted.
 
+Once $149 has been stated to this client anywhere earlier in the conversation, do not restate it again unless the client's own latest message actually asks about price, cost, or how much — a bare "hey"/"hello"/check-in with nothing else is not that. Repeating it unprompted, even framed as "confirming" or "as a reminder," is a hard failure, not a courtesy (see SKILL.md §16).
+
 ## Demo video
 
 Direct link (not a folder — safe to send as-is, previews inline): https://drive.google.com/file/d/1zbNgtjv-MnQCR6BSZjT__cyS2PzQTYcr/view?usp=sharing
@@ -35,7 +37,7 @@ Example of a correctly formed reply (adapt the surrounding sentence to the conve
 
 > Here's the demo: https://drive.google.com/file/d/1zbNgtjv-MnQCR6BSZjT__cyS2PzQTYcr/view?usp=sharing
 
-Still governed by the existing rule (see `examples.md` Case 2): only send it when the client has said yes or asked directly — never unprompted.
+Still governed by the existing rule (see `examples.md` Case 2): only send it when the client has said yes or asked directly — never unprompted. And once it has actually been sent anywhere earlier in the conversation, do not send it again unless the client's latest message explicitly asks for it again — a bare "hey"/"hello"/check-in is not that. This holds no matter how many times it was legitimately re-sent earlier on request; a history full of real re-asks is not license to volunteer it now unasked (see SKILL.md §16).
 
 ## Revisions
 
