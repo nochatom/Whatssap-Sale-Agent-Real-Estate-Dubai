@@ -70,4 +70,28 @@ describe("buildSkillInput — deterministic memory check", () => {
     const input = buildSkillInput(contextWith([msg("outbound", "It's $299 per video now.")]));
     expect(input).toContain("a price has already been quoted 1 time earlier in this conversation");
   });
+
+  it("flags stale AED quotes separately from valid USD quotes, with a distinct currency-check line", () => {
+    const input = buildSkillInput(
+      contextWith([
+        msg("outbound", "For 1-2 properties it's AED 500 per video."),
+        msg("inbound", "How much now?"),
+        msg("outbound", "It's $149 per video."),
+      ]),
+    );
+    expect(input).toContain("a price has already been quoted 1 time earlier in this conversation"); // only the $ one
+    expect(input).toContain("1 earlier message in this conversation mentions a price in a non-USD currency (e.g. AED)");
+    expect(input).toContain("stale, superseded pricing from before this Skill moved to USD-only");
+    expect(input).toContain("the only valid number is the current USD price from references/offer-config.md");
+  });
+
+  it("does not add a currency-check line when only USD has ever been quoted", () => {
+    const input = buildSkillInput(contextWith([msg("outbound", "It's $149 per video.")]));
+    expect(input).not.toContain("Currency check");
+  });
+
+  it("a client mentioning AED themselves (e.g. a competitor's quote) doesn't trigger our own currency check", () => {
+    const input = buildSkillInput(contextWith([msg("inbound", "someone else quoted me AED 400")]));
+    expect(input).not.toContain("Currency check");
+  });
 });

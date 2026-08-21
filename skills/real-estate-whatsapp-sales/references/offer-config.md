@@ -25,6 +25,8 @@ State it as-is: never rounded down, never pre-discounted, never framed as "start
 
 Once $149 has been stated to this client anywhere earlier in the conversation, do not restate it again unless the client's own latest message actually asks about price, cost, or how much — a bare "hey"/"hello"/check-in with nothing else is not that. Repeating it unprompted, even framed as "confirming" or "as a reminder," is a hard failure, not a courtesy (see SKILL.md §16).
 
+**Currency: USD only, always.** $149 is the only valid, current price. If the conversation history contains an AED figure (or any other currency) from earlier in the thread, that is stale, superseded pricing information — never quote it, never treat it as a valid or already-confirmed price, and never let it change or "average out" the number you state now. Whenever price comes up, the number is $149 in USD, exactly as configured here — never AED, never any other currency, regardless of what was said earlier in this same conversation.
+
 ## Demo video
 
 Direct link (not a folder — safe to send as-is, previews inline): https://drive.google.com/file/d/1zbNgtjv-MnQCR6BSZjT__cyS2PzQTYcr/view?usp=sharing

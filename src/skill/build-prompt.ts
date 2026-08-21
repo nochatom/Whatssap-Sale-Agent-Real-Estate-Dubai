@@ -15,6 +15,10 @@ const BEHAVIOR_STATE_LABEL: Record<SkillInvocationContext["behaviorState"], stri
 // today's literal values.
 const PRICE_SHAPE = /\$\s?\d/;
 const DEMO_LINK_HOST = "drive.google.com";
+// A price quoted in a currency the Skill no longer uses (AED, from before
+// pricing moved to USD-only) — stale, not a valid current quote, but still
+// real evidence that pricing has already come up in this conversation.
+const STALE_CURRENCY_PRICE_SHAPE = /\bAED\s?\d/i;
 
 /**
  * Counts, from the real message history, how many times a price and the
@@ -33,16 +37,23 @@ const DEMO_LINK_HOST = "drive.google.com";
  * Skill; what was missing was a reliable way for the model to know the
  * count without re-deriving it from scratch every time.
  *
+ * Also flags stale non-USD (AED) price mentions separately: this Skill's
+ * real test conversation had pricing move from AED to USD-only mid-thread,
+ * and old AED figures still sitting in history were a real contributor to
+ * price restatements slipping through — the model needs to be told those
+ * are superseded, not just that "a price" was mentioned.
+ *
  * Purely additive: never removes, reorders, or alters a single message —
- * this only appends one summary fact after the full transcript, closest to
+ * this only appends summary facts after the full transcript, closest to
  * where the model generates its reply.
  */
 function summarizeAlreadySentContent(messages: SkillInputMessage[]): string | null {
   const outbound = messages.filter((m) => m.direction === "outbound");
   const demoSentCount = outbound.filter((m) => m.body.includes(DEMO_LINK_HOST)).length;
   const priceQuotedCount = outbound.filter((m) => PRICE_SHAPE.test(m.body)).length;
+  const staleCurrencyCount = outbound.filter((m) => STALE_CURRENCY_PRICE_SHAPE.test(m.body)).length;
 
-  if (demoSentCount === 0 && priceQuotedCount === 0) return null;
+  if (demoSentCount === 0 && priceQuotedCount === 0 && staleCurrencyCount === 0) return null;
 
   const facts: string[] = [];
   if (demoSentCount > 0) {
@@ -52,12 +63,25 @@ function summarizeAlreadySentContent(messages: SkillInputMessage[]): string | nu
     facts.push(`a price has already been quoted ${priceQuotedCount} time${priceQuotedCount === 1 ? "" : "s"} earlier in this conversation`);
   }
 
-  return (
-    `[Conversation memory check: ${facts.join(" and ")}. ` +
-    `Do not send or restate either again unless the client's own latest message explicitly asks for it — ` +
-    `a bare greeting or check-in does not count as asking, no matter how many earlier messages in this ` +
-    `conversation legitimately did.]`
-  );
+  const lines: string[] = [];
+  if (facts.length > 0) {
+    lines.push(
+      `[Conversation memory check: ${facts.join(" and ")}. ` +
+        `Do not send or restate either again unless the client's own latest message explicitly asks for it — ` +
+        `a bare greeting or check-in does not count as asking, no matter how many earlier messages in this ` +
+        `conversation legitimately did.]`,
+    );
+  }
+  if (staleCurrencyCount > 0) {
+    lines.push(
+      `[Currency check: ${staleCurrencyCount} earlier message${staleCurrencyCount === 1 ? "" : "s"} in this conversation ` +
+        `mention${staleCurrencyCount === 1 ? "s" : ""} a price in a non-USD currency (e.g. AED). That is stale, superseded ` +
+        `pricing from before this Skill moved to USD-only — it is not a valid quote and must not be repeated or treated ` +
+        `as confirmed. If price comes up, the only valid number is the current USD price from references/offer-config.md.]`,
+    );
+  }
+
+  return lines.join("\n");
 }
 
 /**
