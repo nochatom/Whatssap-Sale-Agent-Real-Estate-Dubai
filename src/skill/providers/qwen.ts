@@ -50,7 +50,8 @@ Output ONLY a single JSON object (no markdown, no code fences, no extra text) wi
     "psychologicalInterpretation": string,
     "buyingSignal": { "level": "LOW" | "MEDIUM" | "HIGH", "evidence": string },
     "mainConcern": string,
-    "whatClientIsLookingFor": string
+    "whatClientIsLookingFor": string,
+    "milestone": "none" | "payment_confirmed" | "ready_to_start"
   },
   "salesStrategy": {
     "bestNextAction": string,
@@ -61,7 +62,10 @@ Output ONLY a single JSON object (no markdown, no code fences, no extra text) wi
     { "kind": "reply", "text": string }
     | { "kind": "do_not_reply_yet", "reason": string, "trigger": string }
     | { "kind": "do_not_follow_up_yet", "reason": string, "trigger": string }
-}`;
+}
+
+Set clientAnalysis.milestone to the exact value on the Milestone line in the source
+text. If that line is missing entirely, set it to "none" — never omit it.`;
 
 /**
  * Two-call shape (prose, then a separate extraction call) — same pattern as

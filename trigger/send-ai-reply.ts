@@ -9,6 +9,8 @@ import { buildReplyIdempotencyKey } from "@/whatsapp/idempotency";
 import { resolveSender } from "@trigger/resolve-sender";
 import { maybeScheduleFollowUp } from "@trigger/schedule-followup";
 import { sendOutboundTask } from "@trigger/send-outbound";
+import { sendTelegramNotificationTask } from "@trigger/send-telegram-notification";
+import type { TelegramMilestone } from "@/telegram/notify";
 
 export interface SendAiReplyPayload {
   conversationId: string;
@@ -141,6 +143,30 @@ export async function sendAiReply(payload: SendAiReplyPayload): Promise<SendAiRe
     status: result.status,
     debugTimingsMs: { ...debugTimingsMs, aiDecisionPersistMs },
   });
+
+  // Private operator alert, entirely independent of whether a reply is
+  // actually sent below — a "do_not_reply_yet" decision can still carry a
+  // real milestone. Wrapped so any failure here (missing Telegram config, API
+  // error) is logged and swallowed, never allowed to affect the customer's
+  // WhatsApp reply that follows.
+  if (result.status === "success") {
+    const milestone = result.decision.clientAnalysis.milestone;
+    if (milestone === "payment_confirmed" || milestone === "ready_to_start") {
+      try {
+        await sendTelegramNotificationTask.trigger({
+          milestone: milestone as TelegramMilestone,
+          leadPhoneE164: conversation.lead.phoneE164,
+          triggeringMessageBody: latestInbound.body ?? "",
+        });
+        logger.log("send-ai-reply: Telegram milestone notification triggered", { milestone });
+      } catch (notifyErr) {
+        logger.error("send-ai-reply: failed to trigger Telegram notification (non-fatal)", {
+          milestone,
+          reason: notifyErr instanceof Error ? notifyErr.message : String(notifyErr),
+        });
+      }
+    }
+  }
 
   if (result.status !== "success") {
     if (isRetryableProviderUnavailable(result)) {

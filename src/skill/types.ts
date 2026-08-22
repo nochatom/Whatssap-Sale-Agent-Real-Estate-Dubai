@@ -5,6 +5,9 @@
 
 export type BuyingSignalLevel = "LOW" | "MEDIUM" | "HIGH";
 
+/** Private, operator-only alert signal — see SKILL.md §6 "Milestone detection". */
+export type Milestone = "none" | "payment_confirmed" | "ready_to_start";
+
 export interface ClientAnalysis {
   clientSector: string;
   clientType: string;
@@ -17,6 +20,14 @@ export interface ClientAnalysis {
   };
   mainConcern: string;
   whatClientIsLookingFor: string;
+  /**
+   * Optional and best-effort by design: absence, an unrecognized value, or a
+   * model that simply forgets this line must NEVER fail SkillDecision parsing
+   * or block the customer's actual WhatsApp reply — only ever used to
+   * additively trigger an internal Telegram alert (send-telegram-notification
+   * task), never read by the WhatsApp send path itself.
+   */
+  milestone?: Milestone;
 }
 
 export interface SalesStrategy {

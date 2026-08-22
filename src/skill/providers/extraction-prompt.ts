@@ -17,6 +17,7 @@ Psychological interpretation: ...
 Buying signal: LOW / MEDIUM / HIGH — [evidence]
 Main concern / objection: ...
 What the client is really looking for: ...
+Milestone: none / payment_confirmed / ready_to_start
 
 SALES STRATEGY
 Best next action: ...
@@ -30,4 +31,6 @@ Extract every field verbatim into the JSON schema you were given. Do not paraphr
 summarize, or add information that is not in the source text. If the reply block is
 "DO NOT REPLY YET" or "DO NOT FOLLOW UP YET", set recommendedReply.kind accordingly
 and pull the reason and trigger from the line(s) that follow it. Otherwise set
-recommendedReply.kind to "reply" and text to the reply exactly as written.`;
+recommendedReply.kind to "reply" and text to the reply exactly as written.
+Set clientAnalysis.milestone to the exact value on the Milestone line. If that line
+is missing entirely, set it to "none" — never omit it, never invent a different value.`;

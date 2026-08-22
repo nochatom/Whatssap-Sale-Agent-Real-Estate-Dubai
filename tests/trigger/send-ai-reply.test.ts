@@ -40,6 +40,14 @@ vi.mock("@trigger/schedule-followup", () => ({
   maybeScheduleFollowUp: (...args: unknown[]) => maybeScheduleFollowUpMock(...args),
 }));
 
+// Its own explicit mock (not the generic task()-replacement below) so its
+// .trigger() calls land on a dedicated mock, never conflated with
+// sendAiReplyTrigger's retry-scheduling assertions.
+const telegramNotificationTrigger = vi.fn();
+vi.mock("@trigger/send-telegram-notification", () => ({
+  sendTelegramNotificationTask: { trigger: (...args: unknown[]) => telegramNotificationTrigger(...args) },
+}));
+
 // sendAiReplyTask is defined via task(...) inside send-ai-reply.ts itself, so
 // it can't be mocked by mocking an external module the way sendOutboundTask
 // is above — task() itself is replaced so the resulting task object's
@@ -102,6 +110,7 @@ describe("sendAiReply", () => {
     sendOutboundTrigger.mockReset().mockResolvedValue({ id: "run_x" });
     maybeScheduleFollowUpMock.mockReset().mockResolvedValue({ scheduled: false, reason: "n/a" });
     sendAiReplyTrigger.mockReset().mockResolvedValue({ id: "run_retry" });
+    telegramNotificationTrigger.mockReset().mockResolvedValue({ id: "run_telegram" });
   });
 
   it("aborts without invoking the Skill when a newer inbound message has arrived", async () => {
@@ -351,5 +360,123 @@ describe("sendAiReply", () => {
 
     expect(result).toEqual({ evaluated: true, status: "parse_failure", replyTriggered: false });
     expect(sendAiReplyTrigger).not.toHaveBeenCalled();
+  });
+
+  describe("Telegram milestone notification", () => {
+    it("triggers a Telegram notification when milestone is payment_confirmed", async () => {
+      invokeSkillMock.mockResolvedValue({
+        status: "success",
+        rawOutput: "...",
+        decision: {
+          ...BASE_DECISION_FIELDS,
+          clientAnalysis: { ...BASE_DECISION_FIELDS.clientAnalysis, milestone: "payment_confirmed" as const },
+          recommendedReply: { kind: "reply" as const, text: "Great, starting now!" },
+        },
+      });
+
+      await sendAiReply(PAYLOAD);
+
+      expect(telegramNotificationTrigger).toHaveBeenCalledWith({
+        milestone: "payment_confirmed",
+        leadPhoneE164: "+15551234567",
+        triggeringMessageBody: "how much?",
+      });
+    });
+
+    it("triggers a Telegram notification when milestone is ready_to_start", async () => {
+      invokeSkillMock.mockResolvedValue({
+        status: "success",
+        rawOutput: "...",
+        decision: {
+          ...BASE_DECISION_FIELDS,
+          clientAnalysis: { ...BASE_DECISION_FIELDS.clientAnalysis, milestone: "ready_to_start" as const },
+          recommendedReply: { kind: "reply" as const, text: "Perfect, let's begin." },
+        },
+      });
+
+      await sendAiReply(PAYLOAD);
+
+      expect(telegramNotificationTrigger).toHaveBeenCalledWith(
+        expect.objectContaining({ milestone: "ready_to_start" }),
+      );
+    });
+
+    it("does NOT trigger a Telegram notification when milestone is absent (existing decisions, unchanged)", async () => {
+      invokeSkillMock.mockResolvedValue({
+        status: "success",
+        rawOutput: "...",
+        decision: {
+          ...BASE_DECISION_FIELDS,
+          recommendedReply: { kind: "reply" as const, text: "AED 500 for 1-2 properties." },
+        },
+      });
+
+      await sendAiReply(PAYLOAD);
+
+      expect(telegramNotificationTrigger).not.toHaveBeenCalled();
+    });
+
+    it("does NOT trigger a Telegram notification when milestone is explicitly none", async () => {
+      invokeSkillMock.mockResolvedValue({
+        status: "success",
+        rawOutput: "...",
+        decision: {
+          ...BASE_DECISION_FIELDS,
+          clientAnalysis: { ...BASE_DECISION_FIELDS.clientAnalysis, milestone: "none" as const },
+          recommendedReply: { kind: "reply" as const, text: "AED 500 for 1-2 properties." },
+        },
+      });
+
+      await sendAiReply(PAYLOAD);
+
+      expect(telegramNotificationTrigger).not.toHaveBeenCalled();
+    });
+
+    it("triggers even when the reply itself is do_not_reply_yet — milestone detection is independent of the reply decision", async () => {
+      invokeSkillMock.mockResolvedValue({
+        status: "success",
+        rawOutput: "...",
+        decision: {
+          ...BASE_DECISION_FIELDS,
+          clientAnalysis: { ...BASE_DECISION_FIELDS.clientAnalysis, milestone: "payment_confirmed" as const },
+          recommendedReply: { kind: "do_not_reply_yet" as const, reason: "too soon", trigger: "wait" },
+        },
+      });
+
+      await sendAiReply(PAYLOAD);
+
+      expect(telegramNotificationTrigger).toHaveBeenCalledOnce();
+      expect(sendOutboundTrigger).not.toHaveBeenCalled();
+    });
+
+    it("does NOT let a Telegram notification failure affect the WhatsApp reply that follows", async () => {
+      telegramNotificationTrigger.mockRejectedValueOnce(new Error("TELEGRAM_BOT_TOKEN not set"));
+      invokeSkillMock.mockResolvedValue({
+        status: "success",
+        rawOutput: "...",
+        decision: {
+          ...BASE_DECISION_FIELDS,
+          clientAnalysis: { ...BASE_DECISION_FIELDS.clientAnalysis, milestone: "payment_confirmed" as const },
+          recommendedReply: { kind: "reply" as const, text: "Great, starting now!" },
+        },
+      });
+
+      const result = await sendAiReply(PAYLOAD);
+
+      expect(result).toEqual({ evaluated: true, status: "success", replyTriggered: true });
+      expect(sendOutboundTrigger).toHaveBeenCalledOnce();
+    });
+
+    it("never triggers Telegram on a parse_failure — there is no decision to read a milestone from", async () => {
+      invokeSkillMock.mockResolvedValue({
+        status: "parse_failure",
+        reason: "extraction output was not valid JSON",
+        rawOutput: "garbled",
+      });
+
+      await sendAiReply(PAYLOAD);
+
+      expect(telegramNotificationTrigger).not.toHaveBeenCalled();
+    });
   });
 });
