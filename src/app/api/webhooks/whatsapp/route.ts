@@ -86,10 +86,16 @@ export async function POST(request: NextRequest) {
   const normalized = normalizePhoneToE164(rawFrom);
   const phoneE164 = normalized.e164 ?? rawFrom;
 
+  // A lead who messages the business first has, by definition, initiated
+  // contact and consented to a reply within the service window — same
+  // reasoning already applied to CSV-imported leads (src/csv/import.ts).
+  // Set on both branches: new inbound leads start opted-in, and an existing
+  // lead created before this (optedIn defaulted false) self-heals the next
+  // time they send a message, with no manual data fix required.
   const lead = await prisma.lead.upsert({
     where: { phoneE164 },
-    update: {},
-    create: { phoneE164 },
+    update: { optedIn: true },
+    create: { phoneE164, optedIn: true },
   });
 
   let conversation = await prisma.conversation.findFirst({
