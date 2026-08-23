@@ -100,7 +100,7 @@ Route to `references/sales-stages.md`.
 Separate from sales stage. Assign exactly one, defaulting to `none`:
 
 - `payment_confirmed` — the client has stated, in their own words, that they have **already completed** a payment. Explicit past-tense confirmation only — "I've paid", "just sent the payment", "payment done". NEVER a question about payment, NEVER a promise to pay later, NEVER the operator's own request for payment.
-- `ready_to_start` — the client has given a **clear, explicit go-ahead** to begin the work after terms are settled — "yes, start", "go ahead", "let's begin". NEVER general enthusiasm ("sounds good", "great") without an explicit instruction to start, and NEVER mid-negotiation interest.
+- `ready_to_start` — the client has given a **clear, explicit go-ahead** — "yes, start", "ok you can start", "go ahead", "let's begin". The instruction itself is the trigger — it does NOT require price, photos, or payment to already be finalized; a client can greenlight the operator to proceed while details are still being worked out. NEVER trigger on vague enthusiasm alone ("sounds good", "great", "nice") with no instruction to start — the client must actually tell the operator to go ahead.
 - `none` — neither applies. This is the default for almost every message.
 
 This is a private operator alert, not a sales judgment — when genuinely uncertain, default to `none` rather than guess.
