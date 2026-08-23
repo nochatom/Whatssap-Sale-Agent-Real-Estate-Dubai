@@ -5,6 +5,7 @@ const messageFindFirst = vi.fn();
 const messageFindMany = vi.fn();
 const conversationFindUniqueOrThrow = vi.fn();
 const aiDecisionCreate = vi.fn();
+const aiDecisionFindFirst = vi.fn();
 const campaignFindUniqueOrThrow = vi.fn();
 
 vi.mock("@/lib/prisma", () => ({
@@ -14,7 +15,10 @@ vi.mock("@/lib/prisma", () => ({
       findMany: (...args: unknown[]) => messageFindMany(...args),
     },
     conversation: { findUniqueOrThrow: (...args: unknown[]) => conversationFindUniqueOrThrow(...args) },
-    aiDecision: { create: (...args: unknown[]) => aiDecisionCreate(...args) },
+    aiDecision: {
+      create: (...args: unknown[]) => aiDecisionCreate(...args),
+      findFirst: (...args: unknown[]) => aiDecisionFindFirst(...args),
+    },
     campaign: { findUniqueOrThrow: (...args: unknown[]) => campaignFindUniqueOrThrow(...args) },
   },
 }));
@@ -102,6 +106,7 @@ describe("sendAiReply", () => {
       lead: { id: "lead_1", phoneE164: "+15551234567" },
     });
     aiDecisionCreate.mockReset().mockResolvedValue({ id: "decision_1" });
+    aiDecisionFindFirst.mockReset().mockResolvedValue(null);
     campaignFindUniqueOrThrow.mockReset().mockResolvedValue({
       id: "camp_1",
       senderPhoneNumberId: "999888777",
@@ -155,12 +160,14 @@ describe("sendAiReply", () => {
     expect(result).toEqual({ evaluated: true, status: "success", replyTriggered: true });
 
     expect(invokeSkillMock).toHaveBeenCalledOnce();
-    const [context] = invokeSkillMock.mock.calls[0];
+    expect(invokeSkillMock.mock.calls[0]).toBeDefined();
+    const [context] = invokeSkillMock.mock.calls[0] ?? [];
     expect(context.behaviorState).toBe("A");
     expect(context.messages).toHaveLength(2);
 
     expect(aiDecisionCreate).toHaveBeenCalledOnce();
-    const [createArgs] = aiDecisionCreate.mock.calls[0];
+    expect(aiDecisionCreate.mock.calls[0]).toBeDefined();
+    const [createArgs] = aiDecisionCreate.mock.calls[0] ?? [];
     expect(createArgs.data.messageId).toBe("msg_2");
     expect(createArgs.data.parseStatus).toBe("SUCCESS");
 
@@ -310,7 +317,8 @@ describe("sendAiReply", () => {
 
     expect(result).toEqual({ evaluated: true, status: "parse_failure", replyTriggered: false });
 
-    const [createArgs] = aiDecisionCreate.mock.calls[0];
+    expect(aiDecisionCreate.mock.calls[0]).toBeDefined();
+    const [createArgs] = aiDecisionCreate.mock.calls[0] ?? [];
     expect(createArgs.data.parseStatus).toBe("PARSE_FAILURE");
     expect(createArgs.data.parsedDecision).toBe(Prisma.JsonNull);
     expect(sendOutboundTrigger).not.toHaveBeenCalled();
@@ -340,7 +348,8 @@ describe("sendAiReply", () => {
     // Rescheduled with the exact same payload so the re-run naturally
     // re-checks staleness at its new fire time, same as the original schedule.
     expect(sendAiReplyTrigger).toHaveBeenCalledOnce();
-    const [retryPayload, retryOptions] = sendAiReplyTrigger.mock.calls[0];
+    expect(sendAiReplyTrigger.mock.calls[0]).toBeDefined();
+    const [retryPayload, retryOptions] = sendAiReplyTrigger.mock.calls[0] ?? [];
     expect(retryPayload).toEqual(PAYLOAD);
     expect(retryOptions.concurrencyKey).toBe("conv_1");
     expect(retryOptions.delay).toBeInstanceOf(Date);
@@ -363,6 +372,28 @@ describe("sendAiReply", () => {
   });
 
   describe("Telegram milestone notification", () => {
+    it("triggers a Telegram notification when milestone is payment_intent", async () => {
+      invokeSkillMock.mockResolvedValue({
+        status: "success",
+        rawOutput: "...",
+        decision: {
+          ...BASE_DECISION_FIELDS,
+          clientAnalysis: { ...BASE_DECISION_FIELDS.clientAnalysis, milestone: "payment_intent" as const },
+          recommendedReply: { kind: "reply" as const, text: "Sure, here's the payment link." },
+        },
+      });
+
+      await sendAiReply(PAYLOAD);
+
+      expect(telegramNotificationTrigger).toHaveBeenCalledWith({
+        milestone: "payment_intent",
+        leadPhoneE164: "+15551234567",
+        leadName: undefined,
+        triggeringMessageBody: "how much?",
+        context: "asking for price",
+      });
+    });
+
     it("triggers a Telegram notification when milestone is payment_confirmed", async () => {
       invokeSkillMock.mockResolvedValue({
         status: "success",
@@ -379,7 +410,9 @@ describe("sendAiReply", () => {
       expect(telegramNotificationTrigger).toHaveBeenCalledWith({
         milestone: "payment_confirmed",
         leadPhoneE164: "+15551234567",
+        leadName: undefined,
         triggeringMessageBody: "how much?",
+        context: "asking for price",
       });
     });
 
@@ -398,6 +431,30 @@ describe("sendAiReply", () => {
 
       expect(telegramNotificationTrigger).toHaveBeenCalledWith(
         expect.objectContaining({ milestone: "ready_to_start" }),
+      );
+    });
+
+    it("includes the lead's name in the notification when the lead has one", async () => {
+      conversationFindUniqueOrThrow.mockResolvedValue({
+        id: "conv_1",
+        leadId: "lead_1",
+        campaignId: "camp_1",
+        lead: { id: "lead_1", phoneE164: "+15551234567", name: "Fatima" },
+      });
+      invokeSkillMock.mockResolvedValue({
+        status: "success",
+        rawOutput: "...",
+        decision: {
+          ...BASE_DECISION_FIELDS,
+          clientAnalysis: { ...BASE_DECISION_FIELDS.clientAnalysis, milestone: "payment_confirmed" as const },
+          recommendedReply: { kind: "reply" as const, text: "Great, starting now!" },
+        },
+      });
+
+      await sendAiReply(PAYLOAD);
+
+      expect(telegramNotificationTrigger).toHaveBeenCalledWith(
+        expect.objectContaining({ leadName: "Fatima" }),
       );
     });
 
@@ -477,6 +534,120 @@ describe("sendAiReply", () => {
       await sendAiReply(PAYLOAD);
 
       expect(telegramNotificationTrigger).not.toHaveBeenCalled();
+    });
+
+    describe("dedup — does not re-notify for the same milestone on every subsequent turn", () => {
+      it("does NOT trigger when the immediately preceding decision already had the same milestone", async () => {
+        aiDecisionFindFirst.mockResolvedValue({
+          parsedDecision: { clientAnalysis: { milestone: "ready_to_start" } },
+        });
+        invokeSkillMock.mockResolvedValue({
+          status: "success",
+          rawOutput: "...",
+          decision: {
+            ...BASE_DECISION_FIELDS,
+            clientAnalysis: { ...BASE_DECISION_FIELDS.clientAnalysis, milestone: "ready_to_start" as const },
+            recommendedReply: { kind: "reply" as const, text: "Sounds good, continuing." },
+          },
+        });
+
+        await sendAiReply(PAYLOAD);
+
+        expect(telegramNotificationTrigger).not.toHaveBeenCalled();
+      });
+
+      it("DOES trigger when the preceding decision had a different milestone (genuine progression)", async () => {
+        aiDecisionFindFirst.mockResolvedValue({
+          parsedDecision: { clientAnalysis: { milestone: "payment_intent" } },
+        });
+        invokeSkillMock.mockResolvedValue({
+          status: "success",
+          rawOutput: "...",
+          decision: {
+            ...BASE_DECISION_FIELDS,
+            clientAnalysis: { ...BASE_DECISION_FIELDS.clientAnalysis, milestone: "payment_confirmed" as const },
+            recommendedReply: { kind: "reply" as const, text: "Great, starting now!" },
+          },
+        });
+
+        await sendAiReply(PAYLOAD);
+
+        expect(telegramNotificationTrigger).toHaveBeenCalledOnce();
+      });
+
+      it("DOES trigger when there is no preceding decision at all (first-ever milestone for this conversation)", async () => {
+        aiDecisionFindFirst.mockResolvedValue(null);
+        invokeSkillMock.mockResolvedValue({
+          status: "success",
+          rawOutput: "...",
+          decision: {
+            ...BASE_DECISION_FIELDS,
+            clientAnalysis: { ...BASE_DECISION_FIELDS.clientAnalysis, milestone: "payment_intent" as const },
+            recommendedReply: { kind: "reply" as const, text: "Sure, here's the payment link." },
+          },
+        });
+
+        await sendAiReply(PAYLOAD);
+
+        expect(telegramNotificationTrigger).toHaveBeenCalledOnce();
+      });
+
+      it("DOES trigger when the preceding decision had no milestone field at all (older/none)", async () => {
+        aiDecisionFindFirst.mockResolvedValue({
+          parsedDecision: { clientAnalysis: { salesStage: "initial interest" } },
+        });
+        invokeSkillMock.mockResolvedValue({
+          status: "success",
+          rawOutput: "...",
+          decision: {
+            ...BASE_DECISION_FIELDS,
+            clientAnalysis: { ...BASE_DECISION_FIELDS.clientAnalysis, milestone: "ready_to_start" as const },
+            recommendedReply: { kind: "reply" as const, text: "Perfect, let's begin." },
+          },
+        });
+
+        await sendAiReply(PAYLOAD);
+
+        expect(telegramNotificationTrigger).toHaveBeenCalledOnce();
+      });
+
+      it("excludes the just-created AiDecision from the dedup lookup", async () => {
+        aiDecisionCreate.mockResolvedValue({ id: "decision_current" });
+        invokeSkillMock.mockResolvedValue({
+          status: "success",
+          rawOutput: "...",
+          decision: {
+            ...BASE_DECISION_FIELDS,
+            clientAnalysis: { ...BASE_DECISION_FIELDS.clientAnalysis, milestone: "ready_to_start" as const },
+            recommendedReply: { kind: "reply" as const, text: "Perfect, let's begin." },
+          },
+        });
+
+        await sendAiReply(PAYLOAD);
+
+        expect(aiDecisionFindFirst).toHaveBeenCalledWith(
+          expect.objectContaining({ where: expect.objectContaining({ id: { not: "decision_current" } }) }),
+        );
+      });
+
+      it("a dedup lookup failure is non-fatal — the WhatsApp reply still sends", async () => {
+        aiDecisionFindFirst.mockRejectedValueOnce(new Error("connection reset"));
+        invokeSkillMock.mockResolvedValue({
+          status: "success",
+          rawOutput: "...",
+          decision: {
+            ...BASE_DECISION_FIELDS,
+            clientAnalysis: { ...BASE_DECISION_FIELDS.clientAnalysis, milestone: "ready_to_start" as const },
+            recommendedReply: { kind: "reply" as const, text: "Perfect, let's begin." },
+          },
+        });
+
+        const result = await sendAiReply(PAYLOAD);
+
+        expect(result).toEqual({ evaluated: true, status: "success", replyTriggered: true });
+        expect(sendOutboundTrigger).toHaveBeenCalledOnce();
+        expect(telegramNotificationTrigger).not.toHaveBeenCalled();
+      });
     });
   });
 });

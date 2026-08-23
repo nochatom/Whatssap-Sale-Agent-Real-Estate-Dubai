@@ -6,7 +6,7 @@
 export type BuyingSignalLevel = "LOW" | "MEDIUM" | "HIGH";
 
 /** Private, operator-only alert signal — see SKILL.md §6 "Milestone detection". */
-export type Milestone = "none" | "payment_confirmed" | "ready_to_start";
+export type Milestone = "none" | "payment_intent" | "payment_confirmed" | "ready_to_start";
 
 export interface ClientAnalysis {
   clientSector: string;

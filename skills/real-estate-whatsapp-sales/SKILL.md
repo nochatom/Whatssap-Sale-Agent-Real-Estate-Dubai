@@ -97,13 +97,14 @@ Route to `references/sales-stages.md`.
 
 ### Milestone detection (private, operator-only — never shown to the client)
 
-Separate from sales stage. Assign exactly one, defaulting to `none`:
+Separate from sales stage. Assign exactly one, defaulting to `none`. Use **semantic intent**, never exact-phrase matching — the examples below are illustrations of the underlying intent, not a checklist to pattern-match against.
 
-- `payment_confirmed` — the client has stated, in their own words, that they have **already completed** a payment. Explicit past-tense confirmation only — "I've paid", "just sent the payment", "payment done". NEVER a question about payment, NEVER a promise to pay later, NEVER the operator's own request for payment.
-- `ready_to_start` — the client has given a **clear, explicit go-ahead** — "yes, start", "ok you can start", "go ahead", "let's begin". The instruction itself is the trigger — it does NOT require price, photos, or payment to already be finalized; a client can greenlight the operator to proceed while details are still being worked out. NEVER trigger on vague enthusiasm alone ("sounds good", "great", "nice") with no instruction to start — the client must actually tell the operator to go ahead.
-- `none` — neither applies. This is the default for almost every message.
+- `payment_intent` — the client clearly intends to pay now, or is asking for what they need in order to pay. E.g. "send me the payment link", "send me your IBAN", "send me the bank details", "how can I pay?", "where can I make the payment?", "I'm ready to make the payment", "give me the payment details", "I want to pay". Do NOT trigger for a general pricing/methods question with no signal of proceeding now — "how much does it cost?", "what payment methods do you accept?", "can I pay by bank transfer?" — those are informational unless the client also signals they're ready to act on it now.
+- `payment_confirmed` — the client states, in their own words, that a payment has **already been made** — "I've made the payment", "I paid", "the payment has been made", "I sent the payment", "the transfer is done", "payment completed". NEVER trigger this just because the client expressed intent to pay (that's `payment_intent`) — this requires completion, stated as already done.
+- `ready_to_start` — the client clearly gives permission to begin the work now — "you can start", "you can begin", "let's start", "go ahead", "I'm ready", "we can proceed", "start the work", "you can proceed", "let's get started". This does NOT require price, photos, or payment to already be finalized — a client can greenlight the operator to proceed while details are still being worked out. NEVER trigger on a question or a future possibility — "can you start tomorrow?", "when can you start?", "how long does it take to start?", "I might be ready next week" are NOT a go-ahead.
+- `none` — none of the above applies. This is the default for almost every message.
 
-This is a private operator alert, not a sales judgment — when genuinely uncertain, default to `none` rather than guess.
+This is a private operator alert, not a sales judgment — when genuinely uncertain, default to `none` rather than guess. A false positive costs the operator a wasted check; a missed one costs a real lead, but guessing on weak evidence erodes trust in the alert over time, so only trigger on a clear read.
 
 ---
 
@@ -258,7 +259,7 @@ Psychological interpretation:
 Buying signal: LOW / MEDIUM / HIGH — [evidence]
 Main concern / objection:
 What the client is really looking for:
-Milestone: none / payment_confirmed / ready_to_start
+Milestone: none / payment_intent / payment_confirmed / ready_to_start
 
 SALES STRATEGY
 Best next action:
@@ -279,7 +280,7 @@ RECOMMENDED WHATSAPP REPLY
 - When the correct action is to wait, the reply block is exactly `DO NOT REPLY YET` — or `DO NOT FOLLOW UP YET` for §9 cases — followed by one short line of why and the trigger to wait for.
 - NEVER force a message to fill the slot.
 - NEVER output more than one reply option unless the operator asks.
-- Milestone defaults to `none`. Only set `payment_confirmed` or `ready_to_start` per the explicit, narrow criteria in §6 — this line triggers a real notification to the operator, so a false positive has a real cost.
+- Milestone defaults to `none`. Only set `payment_intent`, `payment_confirmed`, or `ready_to_start` per the semantic criteria in §6 — this line triggers a real notification to the operator, so a false positive has a real cost.
 
 ---
 

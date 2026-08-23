@@ -1,12 +1,8 @@
 import { logger, task } from "@trigger.dev/sdk/v3";
 
-import { sendTelegramNotification, type TelegramMilestone } from "@/telegram/notify";
+import { sendTelegramNotification, type TelegramNotificationParams } from "@/telegram/notify";
 
-export interface SendTelegramNotificationPayload {
-  milestone: TelegramMilestone;
-  leadPhoneE164: string;
-  triggeringMessageBody: string;
-}
+export type SendTelegramNotificationPayload = TelegramNotificationParams;
 
 /**
  * Queue: entirely independent of every WhatsApp-sending queue

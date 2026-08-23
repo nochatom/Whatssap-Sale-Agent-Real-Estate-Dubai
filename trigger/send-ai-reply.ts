@@ -18,6 +18,24 @@ export interface SendAiReplyPayload {
   triggeringWaMessageId: string;
 }
 
+/**
+ * AiDecision.parsedDecision is a Prisma Json column (untyped at the DB
+ * layer) — this reads clientAnalysis.milestone back out defensively, never
+ * throwing on a null, non-object, or older-shape value (e.g. a decision
+ * persisted before the milestone field existed).
+ */
+function extractMilestone(parsedDecision: Prisma.JsonValue | null | undefined): string | undefined {
+  if (typeof parsedDecision !== "object" || parsedDecision === null || Array.isArray(parsedDecision)) {
+    return undefined;
+  }
+  const clientAnalysis = (parsedDecision as { clientAnalysis?: unknown }).clientAnalysis;
+  if (typeof clientAnalysis !== "object" || clientAnalysis === null) {
+    return undefined;
+  }
+  const milestone = (clientAnalysis as { milestone?: unknown }).milestone;
+  return typeof milestone === "string" ? milestone : undefined;
+}
+
 export type SendAiReplyResult =
   | { evaluated: false; reason: string }
   | {
@@ -147,18 +165,37 @@ export async function sendAiReply(payload: SendAiReplyPayload): Promise<SendAiRe
   // Private operator alert, entirely independent of whether a reply is
   // actually sent below — a "do_not_reply_yet" decision can still carry a
   // real milestone. Wrapped so any failure here (missing Telegram config, API
-  // error) is logged and swallowed, never allowed to affect the customer's
-  // WhatsApp reply that follows.
+  // error, or the dedup lookup itself) is logged and swallowed, never allowed
+  // to affect the customer's WhatsApp reply that follows.
   if (result.status === "success") {
     const milestone = result.decision.clientAnalysis.milestone;
-    if (milestone === "payment_confirmed" || milestone === "ready_to_start") {
+    if (milestone === "payment_intent" || milestone === "payment_confirmed" || milestone === "ready_to_start") {
       try {
-        await sendTelegramNotificationTask.trigger({
-          milestone: milestone as TelegramMilestone,
-          leadPhoneE164: conversation.lead.phoneE164,
-          triggeringMessageBody: latestInbound.body ?? "",
+        // Dedup: only notify when this milestone differs from the one on the
+        // conversation's immediately preceding decision, so a milestone that
+        // persists across several turns (e.g. still "ready_to_start" while
+        // the customer keeps chatting) doesn't re-alert every single turn.
+        const previousDecision = await prisma.aiDecision.findFirst({
+          where: { conversationId: conversation.id, id: { not: aiDecision.id } },
+          orderBy: { createdAt: "desc" },
+          select: { parsedDecision: true },
         });
-        logger.log("send-ai-reply: Telegram milestone notification triggered", { milestone });
+        const previousMilestone = extractMilestone(previousDecision?.parsedDecision);
+
+        if (previousMilestone === milestone) {
+          logger.log("send-ai-reply: milestone unchanged since the last turn, skipping duplicate Telegram notification", {
+            milestone,
+          });
+        } else {
+          await sendTelegramNotificationTask.trigger({
+            milestone: milestone as TelegramMilestone,
+            leadPhoneE164: conversation.lead.phoneE164,
+            leadName: conversation.lead.name ?? undefined,
+            triggeringMessageBody: latestInbound.body ?? "",
+            context: result.decision.clientAnalysis.salesStage,
+          });
+          logger.log("send-ai-reply: Telegram milestone notification triggered", { milestone, previousMilestone });
+        }
       } catch (notifyErr) {
         logger.error("send-ai-reply: failed to trigger Telegram notification (non-fatal)", {
           milestone,

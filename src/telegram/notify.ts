@@ -4,31 +4,39 @@
  * customer; the only recipient is TELEGRAM_CHAT_ID, the operator's own chat.
  */
 
-export type TelegramMilestone = "payment_confirmed" | "ready_to_start";
+export type TelegramMilestone = "payment_intent" | "payment_confirmed" | "ready_to_start";
 
 export interface TelegramNotificationParams {
   milestone: TelegramMilestone;
   leadPhoneE164: string;
+  /** Lead.name — omitted from the message entirely when the lead has none. */
+  leadName?: string;
   triggeringMessageBody: string;
+  /** Short, optional context (e.g. sales stage) — only shown when provided. */
+  context?: string;
 }
 
 const MILESTONE_LABELS: Record<TelegramMilestone, string> = {
-  payment_confirmed: "🔔 PAYMENT CONFIRMED",
-  ready_to_start: "🔔 READY TO START",
+  payment_intent: "💳 PAYMENT INTENT",
+  payment_confirmed: "✅ PAYMENT CONFIRMED",
+  ready_to_start: "🚀 READY TO START",
 };
 
-const MILESTONE_ACTIONS: Record<TelegramMilestone, string> = {
-  payment_confirmed: "Check the conversation and proceed.",
-  ready_to_start: "Take over / start the work.",
-};
+function formatTimestamp(date: Date): string {
+  return `${date.toISOString().slice(0, 16).replace("T", " ")} UTC`;
+}
 
 function buildMessage(params: TelegramNotificationParams): string {
-  return [
+  const lines = [
     MILESTONE_LABELS[params.milestone],
-    `Lead: ${params.leadPhoneE164}`,
+    params.leadName ? `Lead: ${params.leadName} (${params.leadPhoneE164})` : `Lead: ${params.leadPhoneE164}`,
     `Message: "${params.triggeringMessageBody}"`,
-    `Action: ${MILESTONE_ACTIONS[params.milestone]}`,
-  ].join("\n");
+  ];
+  if (params.context) {
+    lines.push(`Context: ${params.context}`);
+  }
+  lines.push(`Time: ${formatTimestamp(new Date())}`);
+  return lines.join("\n");
 }
 
 /**

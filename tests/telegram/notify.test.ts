@@ -1,10 +1,15 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { sendTelegramNotification } from "@/telegram/notify";
 
 describe("sendTelegramNotification", () => {
   const originalBotToken = process.env.TELEGRAM_BOT_TOKEN;
   const originalChatId = process.env.TELEGRAM_CHAT_ID;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-23T13:37:00.000Z"));
+  });
 
   afterEach(() => {
     if (originalBotToken === undefined) delete process.env.TELEGRAM_BOT_TOKEN;
@@ -13,6 +18,7 @@ describe("sendTelegramNotification", () => {
     else process.env.TELEGRAM_CHAT_ID = originalChatId;
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   it("throws when TELEGRAM_BOT_TOKEN is unset", async () => {
@@ -66,7 +72,28 @@ describe("sendTelegramNotification", () => {
     const body = JSON.parse(options.body);
     expect(body.chat_id).toBe("999");
     expect(body.text).toBe(
-      '🔔 PAYMENT CONFIRMED\nLead: +213557633299\nMessage: "I\'ve made the payment."\nAction: Check the conversation and proceed.',
+      '✅ PAYMENT CONFIRMED\nLead: +213557633299\nMessage: "I\'ve made the payment."\nTime: 2026-08-23 13:37 UTC',
+    );
+  });
+
+  it("formats a payment_intent notification correctly, with context when provided", async () => {
+    process.env.TELEGRAM_BOT_TOKEN = "bot-token";
+    process.env.TELEGRAM_CHAT_ID = "999";
+    const fetchSpy = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await sendTelegramNotification({
+      milestone: "payment_intent",
+      leadPhoneE164: "+213557633299",
+      triggeringMessageBody: "Send me the payment link",
+      context: "negotiating",
+    });
+
+    expect(fetchSpy.mock.calls[0]).toBeDefined();
+    const [, options] = fetchSpy.mock.calls[0] ?? [];
+    const body = JSON.parse(options.body);
+    expect(body.text).toBe(
+      '💳 PAYMENT INTENT\nLead: +213557633299\nMessage: "Send me the payment link"\nContext: negotiating\nTime: 2026-08-23 13:37 UTC',
     );
   });
 
@@ -86,8 +113,45 @@ describe("sendTelegramNotification", () => {
     const [, options] = fetchSpy.mock.calls[0] ?? [];
     const body = JSON.parse(options.body);
     expect(body.text).toBe(
-      '🔔 READY TO START\nLead: +213557633299\nMessage: "Yes, you can start."\nAction: Take over / start the work.',
+      '🚀 READY TO START\nLead: +213557633299\nMessage: "Yes, you can start."\nTime: 2026-08-23 13:37 UTC',
     );
+  });
+
+  it("includes the lead's name when provided, formatted as 'Name (phone)'", async () => {
+    process.env.TELEGRAM_BOT_TOKEN = "bot-token";
+    process.env.TELEGRAM_CHAT_ID = "999";
+    const fetchSpy = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await sendTelegramNotification({
+      milestone: "ready_to_start",
+      leadPhoneE164: "+213557633299",
+      leadName: "Fatima",
+      triggeringMessageBody: "Yes, you can start.",
+    });
+
+    expect(fetchSpy.mock.calls[0]).toBeDefined();
+    const [, options] = fetchSpy.mock.calls[0] ?? [];
+    const body = JSON.parse(options.body);
+    expect(body.text).toContain("Lead: Fatima (+213557633299)");
+  });
+
+  it("omits the Context line entirely when no context is provided", async () => {
+    process.env.TELEGRAM_BOT_TOKEN = "bot-token";
+    process.env.TELEGRAM_CHAT_ID = "999";
+    const fetchSpy = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await sendTelegramNotification({
+      milestone: "ready_to_start",
+      leadPhoneE164: "+1",
+      triggeringMessageBody: "go",
+    });
+
+    expect(fetchSpy.mock.calls[0]).toBeDefined();
+    const [, options] = fetchSpy.mock.calls[0] ?? [];
+    const body = JSON.parse(options.body);
+    expect(body.text).not.toContain("Context:");
   });
 
   it("throws with the response body when Telegram returns a non-ok response", async () => {
