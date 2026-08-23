@@ -16,12 +16,20 @@ export interface TelegramNotificationParams {
   context?: string;
   /** Only meaningful for payment_proof_received — see describeProofMedia(). */
   proofMediaDescription?: string;
+  /**
+   * Only meaningful for ready_to_start — deterministically computed from this
+   * conversation's actual history (see send-ai-reply.ts), never restated by
+   * the model, so it's never a stale or hallucinated summary.
+   */
+  paymentStatus?: string;
+  /** Only meaningful for ready_to_start — see paymentStatus. */
+  assetsStatus?: string;
 }
 
 const MILESTONE_LABELS: Record<TelegramMilestone, string> = {
-  payment_intent: "💳 PAYMENT INTENT",
-  payment_confirmed: "✅ PAYMENT CONFIRMED",
-  payment_proof_received: "📎 PAYMENT PROOF RECEIVED",
+  payment_intent: "🚨 PAYMENT INTENT",
+  payment_confirmed: "💰 PAYMENT UPDATE",
+  payment_proof_received: "📎 PAYMENT PROOF",
   ready_to_start: "🚀 READY TO START",
 };
 
@@ -58,6 +66,14 @@ function buildMessage(params: TelegramNotificationParams): string {
   if (params.milestone === "payment_proof_received") {
     lines.push(`Proof: ${params.proofMediaDescription ?? "File received"}`);
     lines.push("Action: Please verify the payment manually.");
+  }
+  if (params.milestone === "payment_confirmed") {
+    lines.push("Note: This is the client's claim only, not financial verification — please verify the payment yourself.");
+  }
+  if (params.milestone === "ready_to_start") {
+    lines.push(`Payment: ${params.paymentStatus ?? "Unknown"}`);
+    lines.push(`Assets: ${params.assetsStatus ?? "Unknown"}`);
+    lines.push("Action: Start working on the project.");
   }
   if (params.context) {
     lines.push(`Context: ${params.context}`);

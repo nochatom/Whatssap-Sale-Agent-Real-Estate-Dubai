@@ -3,9 +3,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const messageFindFirst = vi.fn();
 const messageFindMany = vi.fn();
+const messageFindUnique = vi.fn();
 const conversationFindUniqueOrThrow = vi.fn();
 const aiDecisionCreate = vi.fn();
 const aiDecisionFindFirst = vi.fn();
+const aiDecisionFindMany = vi.fn();
 const campaignFindUniqueOrThrow = vi.fn();
 
 vi.mock("@/lib/prisma", () => ({
@@ -13,11 +15,13 @@ vi.mock("@/lib/prisma", () => ({
     message: {
       findFirst: (...args: unknown[]) => messageFindFirst(...args),
       findMany: (...args: unknown[]) => messageFindMany(...args),
+      findUnique: (...args: unknown[]) => messageFindUnique(...args),
     },
     conversation: { findUniqueOrThrow: (...args: unknown[]) => conversationFindUniqueOrThrow(...args) },
     aiDecision: {
       create: (...args: unknown[]) => aiDecisionCreate(...args),
       findFirst: (...args: unknown[]) => aiDecisionFindFirst(...args),
+      findMany: (...args: unknown[]) => aiDecisionFindMany(...args),
     },
     campaign: { findUniqueOrThrow: (...args: unknown[]) => campaignFindUniqueOrThrow(...args) },
   },
@@ -107,6 +111,8 @@ describe("sendAiReply", () => {
     });
     aiDecisionCreate.mockReset().mockResolvedValue({ id: "decision_1" });
     aiDecisionFindFirst.mockReset().mockResolvedValue(null);
+    aiDecisionFindMany.mockReset().mockResolvedValue([]);
+    messageFindUnique.mockReset().mockResolvedValue(null);
     campaignFindUniqueOrThrow.mockReset().mockResolvedValue({
       id: "camp_1",
       senderPhoneNumberId: "999888777",
@@ -441,6 +447,119 @@ describe("sendAiReply", () => {
       );
     });
 
+    describe("ready_to_start status enrichment (deterministic, from conversation history)", () => {
+      function mockReadyToStart() {
+        invokeSkillMock.mockResolvedValue({
+          status: "success",
+          rawOutput: "...",
+          decision: {
+            ...BASE_DECISION_FIELDS,
+            clientAnalysis: { ...BASE_DECISION_FIELDS.clientAnalysis, milestone: "ready_to_start" as const },
+            recommendedReply: { kind: "reply" as const, text: "Perfect, let's begin." },
+          },
+        });
+      }
+
+      it("computes paymentStatus as 'Not yet confirmed' when no prior payment_confirmed/proof_received decision exists", async () => {
+        aiDecisionFindMany.mockResolvedValue([
+          { parsedDecision: { clientAnalysis: { milestone: "payment_intent" } } },
+        ]);
+        mockReadyToStart();
+
+        await sendAiReply(PAYLOAD);
+
+        expect(telegramNotificationTrigger).toHaveBeenCalledWith(
+          expect.objectContaining({ paymentStatus: "Not yet confirmed" }),
+        );
+      });
+
+      it("computes paymentStatus as claimed when a prior payment_confirmed decision exists anywhere in this conversation's history", async () => {
+        aiDecisionFindMany.mockResolvedValue([
+          { parsedDecision: { clientAnalysis: { milestone: "payment_intent" } } },
+          { parsedDecision: { clientAnalysis: { milestone: "payment_confirmed" } } },
+        ]);
+        mockReadyToStart();
+
+        await sendAiReply(PAYLOAD);
+
+        expect(telegramNotificationTrigger).toHaveBeenCalledWith(
+          expect.objectContaining({ paymentStatus: "Claimed by client (not yet manually verified)" }),
+        );
+      });
+
+      it("computes paymentStatus as claimed when a prior payment_proof_received decision exists", async () => {
+        aiDecisionFindMany.mockResolvedValue([
+          { parsedDecision: { clientAnalysis: { milestone: "payment_proof_received" } } },
+        ]);
+        mockReadyToStart();
+
+        await sendAiReply(PAYLOAD);
+
+        expect(telegramNotificationTrigger).toHaveBeenCalledWith(
+          expect.objectContaining({ paymentStatus: "Claimed by client (not yet manually verified)" }),
+        );
+      });
+
+      it("computes assetsStatus as 'Photos provided' when an inbound image message exists in history", async () => {
+        messageFindMany.mockResolvedValue([
+          { direction: "INBOUND", body: null, type: "image", createdAt: new Date("2026-08-01T10:00:00Z") },
+          { direction: "INBOUND", body: "you can start", type: "text", createdAt: new Date("2026-08-01T10:05:00Z") },
+        ]);
+        mockReadyToStart();
+
+        await sendAiReply(PAYLOAD);
+
+        expect(telegramNotificationTrigger).toHaveBeenCalledWith(
+          expect.objectContaining({ assetsStatus: "Photos provided" }),
+        );
+      });
+
+      it("computes assetsStatus as 'Property/listing link provided' when an inbound message contains a URL and no image was sent", async () => {
+        messageFindMany.mockResolvedValue([
+          { direction: "INBOUND", body: "here's the listing: https://example.com/listing/123", type: "text", createdAt: new Date("2026-08-01T10:00:00Z") },
+        ]);
+        mockReadyToStart();
+
+        await sendAiReply(PAYLOAD);
+
+        expect(telegramNotificationTrigger).toHaveBeenCalledWith(
+          expect.objectContaining({ assetsStatus: "Property/listing link provided" }),
+        );
+      });
+
+      it("computes assetsStatus as 'Not yet provided' when neither photos nor a link have arrived", async () => {
+        messageFindMany.mockResolvedValue([
+          { direction: "INBOUND", body: "you can start", type: "text", createdAt: new Date("2026-08-01T10:00:00Z") },
+        ]);
+        mockReadyToStart();
+
+        await sendAiReply(PAYLOAD);
+
+        expect(telegramNotificationTrigger).toHaveBeenCalledWith(
+          expect.objectContaining({ assetsStatus: "Not yet provided" }),
+        );
+      });
+
+      it("does NOT compute paymentStatus/assetsStatus (or query AiDecision history) for the other 3 milestones", async () => {
+        invokeSkillMock.mockResolvedValue({
+          status: "success",
+          rawOutput: "...",
+          decision: {
+            ...BASE_DECISION_FIELDS,
+            clientAnalysis: { ...BASE_DECISION_FIELDS.clientAnalysis, milestone: "payment_intent" as const },
+            recommendedReply: { kind: "reply" as const, text: "Sure, here's the payment link." },
+          },
+        });
+
+        await sendAiReply(PAYLOAD);
+
+        expect(telegramNotificationTrigger).toHaveBeenCalledWith(
+          expect.objectContaining({ paymentStatus: undefined, assetsStatus: undefined }),
+        );
+        expect(aiDecisionFindMany).not.toHaveBeenCalled();
+      });
+    });
+
     it("triggers a Telegram notification when milestone is payment_proof_received, with proofMediaDescription derived from the triggering message", async () => {
       messageFindFirst.mockResolvedValue({
         id: "msg_2",
@@ -612,10 +731,12 @@ describe("sendAiReply", () => {
     });
 
     describe("dedup — does not re-notify for the same milestone on every subsequent turn", () => {
-      it("does NOT trigger when the immediately preceding decision already had the same milestone", async () => {
+      it("does NOT trigger when the immediately preceding decision has the same milestone AND the same triggering message (true duplicate)", async () => {
         aiDecisionFindFirst.mockResolvedValue({
           parsedDecision: { clientAnalysis: { milestone: "ready_to_start" } },
+          messageId: "msg_prev",
         });
+        messageFindUnique.mockResolvedValue({ body: "how much?" }); // matches the default latestInbound.body
         invokeSkillMock.mockResolvedValue({
           status: "success",
           rawOutput: "...",
@@ -629,6 +750,31 @@ describe("sendAiReply", () => {
         await sendAiReply(PAYLOAD);
 
         expect(telegramNotificationTrigger).not.toHaveBeenCalled();
+      });
+
+      it("DOES trigger when the milestone matches the preceding decision but the triggering message text differs (genuinely new detail)", async () => {
+        aiDecisionFindFirst.mockResolvedValue({
+          parsedDecision: { clientAnalysis: { milestone: "payment_confirmed" } },
+          messageId: "msg_prev",
+        });
+        messageFindUnique.mockResolvedValue({ body: "I paid 30%" });
+        messageFindFirst.mockResolvedValue({ id: "msg_2", type: "text", body: "I paid the remaining 70%" });
+        invokeSkillMock.mockResolvedValue({
+          status: "success",
+          rawOutput: "...",
+          decision: {
+            ...BASE_DECISION_FIELDS,
+            clientAnalysis: { ...BASE_DECISION_FIELDS.clientAnalysis, milestone: "payment_confirmed" as const },
+            recommendedReply: { kind: "reply" as const, text: "Thanks for the update!" },
+          },
+        });
+
+        await sendAiReply(PAYLOAD);
+
+        expect(telegramNotificationTrigger).toHaveBeenCalledOnce();
+        expect(telegramNotificationTrigger).toHaveBeenCalledWith(
+          expect.objectContaining({ triggeringMessageBody: "I paid the remaining 70%" }),
+        );
       });
 
       it("DOES trigger when the preceding decision had a different milestone (genuine progression)", async () => {
@@ -727,7 +873,9 @@ describe("sendAiReply", () => {
       it("applies the same dedup rule to payment_proof_received as the other 3 milestones", async () => {
         aiDecisionFindFirst.mockResolvedValue({
           parsedDecision: { clientAnalysis: { milestone: "payment_proof_received" } },
+          messageId: "msg_prev",
         });
+        messageFindUnique.mockResolvedValue({ body: "" });
         messageFindFirst.mockResolvedValue({ id: "msg_2", type: "image", body: "", mimeType: "image/jpeg" });
         invokeSkillMock.mockResolvedValue({
           status: "success",

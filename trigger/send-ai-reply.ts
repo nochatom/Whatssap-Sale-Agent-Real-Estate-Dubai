@@ -36,6 +36,40 @@ function extractMilestone(parsedDecision: Prisma.JsonValue | null | undefined): 
   return typeof milestone === "string" ? milestone : undefined;
 }
 
+const URL_SHAPE = /https?:\/\/\S+/i;
+
+/**
+ * Payment/Assets status for the ready_to_start Telegram alert — computed
+ * deterministically from this conversation's actual AiDecision/Message
+ * history, never restated by the model. Same "don't trust long-conversation
+ * recall" reasoning already applied to price/currency tracking in
+ * build-prompt.ts: the model re-describing this fresh each turn is a real
+ * source of stale or wrong summaries; a direct DB scan isn't.
+ */
+async function computeProjectStatus(
+  conversationId: string,
+  messages: { direction: string; body: string | null; type: string }[],
+): Promise<{ paymentStatus: string; assetsStatus: string }> {
+  const decisions = await prisma.aiDecision.findMany({
+    where: { conversationId },
+    select: { parsedDecision: true },
+  });
+  const everClaimedOrProven = decisions.some((d) => {
+    const m = extractMilestone(d.parsedDecision);
+    return m === "payment_confirmed" || m === "payment_proof_received";
+  });
+  const paymentStatus = everClaimedOrProven
+    ? "Claimed by client (not yet manually verified)"
+    : "Not yet confirmed";
+
+  const inbound = messages.filter((m) => m.direction === "INBOUND");
+  const hasPhotos = inbound.some((m) => m.type === "image");
+  const hasLink = !hasPhotos && inbound.some((m) => m.body && URL_SHAPE.test(m.body));
+  const assetsStatus = hasPhotos ? "Photos provided" : hasLink ? "Property/listing link provided" : "Not yet provided";
+
+  return { paymentStatus, assetsStatus };
+}
+
 export type SendAiReplyResult =
   | { evaluated: false; reason: string }
   | {
@@ -178,22 +212,39 @@ export async function sendAiReply(payload: SendAiReplyPayload): Promise<SendAiRe
       milestone === "ready_to_start"
     ) {
       try {
-        // Dedup: only notify when this milestone differs from the one on the
-        // conversation's immediately preceding decision, so a milestone that
-        // persists across several turns (e.g. still "ready_to_start" while
-        // the customer keeps chatting) doesn't re-alert every single turn.
+        // Dedup: only skip when BOTH the milestone AND the triggering message
+        // text match the conversation's immediately preceding decision — a
+        // real consecutive duplicate (e.g. a retried run re-processing the
+        // same inbound message). Same milestone but different message text
+        // (e.g. "I paid 30%" then later "I paid the remaining 70%") is
+        // genuinely new information and still alerts, even within the same
+        // milestone category.
         const previousDecision = await prisma.aiDecision.findFirst({
           where: { conversationId: conversation.id, id: { not: aiDecision.id } },
           orderBy: { createdAt: "desc" },
-          select: { parsedDecision: true },
+          select: { parsedDecision: true, messageId: true },
         });
         const previousMilestone = extractMilestone(previousDecision?.parsedDecision);
 
-        if (previousMilestone === milestone) {
-          logger.log("send-ai-reply: milestone unchanged since the last turn, skipping duplicate Telegram notification", {
+        let isTrueDuplicate = false;
+        if (previousMilestone === milestone && previousDecision?.messageId) {
+          const previousMessage = await prisma.message.findUnique({
+            where: { id: previousDecision.messageId },
+            select: { body: true },
+          });
+          isTrueDuplicate = previousMessage?.body === latestInbound.body;
+        }
+
+        if (isTrueDuplicate) {
+          logger.log("send-ai-reply: same milestone and same message as the last turn, skipping duplicate Telegram notification", {
             milestone,
           });
         } else {
+          const { paymentStatus, assetsStatus } =
+            milestone === "ready_to_start"
+              ? await computeProjectStatus(conversation.id, history)
+              : { paymentStatus: undefined, assetsStatus: undefined };
+
           await sendTelegramNotificationTask.trigger({
             milestone: milestone as TelegramMilestone,
             leadPhoneE164: conversation.lead.phoneE164,
@@ -204,6 +255,8 @@ export async function sendAiReply(payload: SendAiReplyPayload): Promise<SendAiRe
               milestone === "payment_proof_received"
                 ? describeProofMedia(latestInbound.type, latestInbound.mimeType, latestInbound.filename)
                 : undefined,
+            paymentStatus,
+            assetsStatus,
           });
           logger.log("send-ai-reply: Telegram milestone notification triggered", { milestone, previousMilestone });
         }
