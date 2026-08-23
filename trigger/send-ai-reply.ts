@@ -10,7 +10,7 @@ import { resolveSender } from "@trigger/resolve-sender";
 import { maybeScheduleFollowUp } from "@trigger/schedule-followup";
 import { sendOutboundTask } from "@trigger/send-outbound";
 import { sendTelegramNotificationTask } from "@trigger/send-telegram-notification";
-import type { TelegramMilestone } from "@/telegram/notify";
+import { describeProofMedia, type TelegramMilestone } from "@/telegram/notify";
 
 export interface SendAiReplyPayload {
   conversationId: string;
@@ -109,6 +109,8 @@ export async function sendAiReply(payload: SendAiReplyPayload): Promise<SendAiRe
     direction: m.direction === "INBOUND" ? "inbound" : "outbound",
     body: m.body ?? "",
     sentAt: m.createdAt.toISOString(),
+    type: m.type,
+    filename: m.filename ?? undefined,
   }));
 
   const context: SkillInvocationContext = {
@@ -169,7 +171,12 @@ export async function sendAiReply(payload: SendAiReplyPayload): Promise<SendAiRe
   // to affect the customer's WhatsApp reply that follows.
   if (result.status === "success") {
     const milestone = result.decision.clientAnalysis.milestone;
-    if (milestone === "payment_intent" || milestone === "payment_confirmed" || milestone === "ready_to_start") {
+    if (
+      milestone === "payment_intent" ||
+      milestone === "payment_confirmed" ||
+      milestone === "payment_proof_received" ||
+      milestone === "ready_to_start"
+    ) {
       try {
         // Dedup: only notify when this milestone differs from the one on the
         // conversation's immediately preceding decision, so a milestone that
@@ -193,6 +200,10 @@ export async function sendAiReply(payload: SendAiReplyPayload): Promise<SendAiRe
             leadName: conversation.lead.name ?? undefined,
             triggeringMessageBody: latestInbound.body ?? "",
             context: result.decision.clientAnalysis.salesStage,
+            proofMediaDescription:
+              milestone === "payment_proof_received"
+                ? describeProofMedia(latestInbound.type, latestInbound.mimeType, latestInbound.filename)
+                : undefined,
           });
           logger.log("send-ai-reply: Telegram milestone notification triggered", { milestone, previousMilestone });
         }

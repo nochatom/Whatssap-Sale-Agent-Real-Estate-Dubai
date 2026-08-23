@@ -71,6 +71,32 @@ describe("isSkillDecision", () => {
   });
 });
 
+describe("isSkillDecision — milestone (optional, best-effort)", () => {
+  it("accepts a decision with milestone: payment_proof_received", () => {
+    const decision = {
+      ...VALID_DECISION,
+      clientAnalysis: { ...VALID_DECISION.clientAnalysis, milestone: "payment_proof_received" },
+    };
+    expect(isSkillDecision(decision)).toBe(true);
+  });
+
+  it("still accepts a decision with no milestone field at all", () => {
+    expect(isSkillDecision(VALID_DECISION)).toBe(true);
+  });
+
+  it("round-trips payment_proof_received through parseExtractionOutput", () => {
+    const decision = {
+      ...VALID_DECISION,
+      clientAnalysis: { ...VALID_DECISION.clientAnalysis, milestone: "payment_proof_received" as const },
+    };
+    const result = parseExtractionOutput(JSON.stringify(decision));
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.decision.clientAnalysis.milestone).toBe("payment_proof_received");
+    }
+  });
+});
+
 describe("parseExtractionOutput", () => {
   it("returns ok with the parsed decision for valid JSON", () => {
     const result = parseExtractionOutput(JSON.stringify(VALID_DECISION));

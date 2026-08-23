@@ -4,7 +4,7 @@
  * customer; the only recipient is TELEGRAM_CHAT_ID, the operator's own chat.
  */
 
-export type TelegramMilestone = "payment_intent" | "payment_confirmed" | "ready_to_start";
+export type TelegramMilestone = "payment_intent" | "payment_confirmed" | "payment_proof_received" | "ready_to_start";
 
 export interface TelegramNotificationParams {
   milestone: TelegramMilestone;
@@ -14,16 +14,39 @@ export interface TelegramNotificationParams {
   triggeringMessageBody: string;
   /** Short, optional context (e.g. sales stage) — only shown when provided. */
   context?: string;
+  /** Only meaningful for payment_proof_received — see describeProofMedia(). */
+  proofMediaDescription?: string;
 }
 
 const MILESTONE_LABELS: Record<TelegramMilestone, string> = {
   payment_intent: "💳 PAYMENT INTENT",
   payment_confirmed: "✅ PAYMENT CONFIRMED",
+  payment_proof_received: "📎 PAYMENT PROOF RECEIVED",
   ready_to_start: "🚀 READY TO START",
 };
 
 function formatTimestamp(date: Date): string {
   return `${date.toISOString().slice(0, 16).replace("T", " ")} UTC`;
+}
+
+/**
+ * Human-readable description of an attachment for the Proof: line — never
+ * describes actual file CONTENT (there is no vision capability anywhere in
+ * this codebase, see build-prompt.ts's mediaIndicator), only its type/name.
+ */
+export function describeProofMedia(
+  type: string | null | undefined,
+  mimeType?: string | null,
+  filename?: string | null,
+): string {
+  if (type === "image") return "Image received";
+  if (type === "document") {
+    if (mimeType === "application/pdf") return "PDF received";
+    return filename ? `Document received (${filename})` : "Document received";
+  }
+  if (type === "audio") return "Audio received";
+  if (type === "video") return "Video received";
+  return "File received";
 }
 
 function buildMessage(params: TelegramNotificationParams): string {
@@ -32,6 +55,10 @@ function buildMessage(params: TelegramNotificationParams): string {
     params.leadName ? `Lead: ${params.leadName} (${params.leadPhoneE164})` : `Lead: ${params.leadPhoneE164}`,
     `Message: "${params.triggeringMessageBody}"`,
   ];
+  if (params.milestone === "payment_proof_received") {
+    lines.push(`Proof: ${params.proofMediaDescription ?? "File received"}`);
+    lines.push("Action: Please verify the payment manually.");
+  }
   if (params.context) {
     lines.push(`Context: ${params.context}`);
   }

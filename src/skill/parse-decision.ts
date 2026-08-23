@@ -30,7 +30,10 @@ export const SKILL_DECISION_JSON_SCHEMA = {
         whatClientIsLookingFor: { type: "string" },
         // Not in `required` — deliberately optional. See ClientAnalysis.milestone
         // in types.ts for why this must stay best-effort, never parse-blocking.
-        milestone: { type: "string", enum: ["none", "payment_intent", "payment_confirmed", "ready_to_start"] },
+        milestone: {
+          type: "string",
+          enum: ["none", "payment_intent", "payment_confirmed", "payment_proof_received", "ready_to_start"],
+        },
       },
       required: [
         "clientSector",

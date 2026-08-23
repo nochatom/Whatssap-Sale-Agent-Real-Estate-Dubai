@@ -25,7 +25,7 @@ State it as-is: never rounded down, never pre-discounted, never framed as "start
 
 Once $149 has been stated to this client anywhere earlier in the conversation, do not restate it again unless the client's own latest message actually asks about price, cost, or how much — a bare "hey"/"hello"/check-in with nothing else is not that. Repeating it unprompted, even framed as "confirming" or "as a reminder," is a hard failure, not a courtesy (see SKILL.md §16).
 
-**Currency: USD only, always.** $149 is the only valid, current price. If the conversation history contains an AED figure (or any other currency) from earlier in the thread, that is stale, superseded pricing information — never quote it, never treat it as a valid or already-confirmed price, and never let it change or "average out" the number you state now. Whenever price comes up, the number is $149 in USD, exactly as configured here — never AED, never any other currency, regardless of what was said earlier in this same conversation.
+**Currency: open in USD by default.** $149 is the default opening price, stated in USD, unless the client has already specified or established a different one of the 3 supported currencies (USD/GBP/EUR — see `references/payment-config.md` for the GBP/EUR prices and SKILL.md §11 for the currency-selection flow). Never calculate a GBP/EUR figure from $149 — each currency's price is its own literal number in `references/payment-config.md`, never derived from this one. If the conversation history contains a figure in a currency that is not one of USD/GBP/EUR (e.g. AED, SAR, EGP), that is stale, superseded pricing information — never quote it, never treat it as valid or already-confirmed, and never let it change or "average out" the number you state now.
 
 ## Demo video
 
@@ -52,6 +52,8 @@ Unlimited, within reason. Scoped to reasonable edit requests on the delivered vi
 ## Payment terms
 
 50% upfront, 50% on delivery.
+
+For bank details, IBAN/SWIFT, payment method, and pricing in GBP/EUR, see `references/payment-config.md` — never invent or state these from memory.
 
 ## Additional service
 

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { sendTelegramNotification } from "@/telegram/notify";
+import { describeProofMedia, sendTelegramNotification } from "@/telegram/notify";
 
 describe("sendTelegramNotification", () => {
   const originalBotToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -167,5 +167,88 @@ describe("sendTelegramNotification", () => {
     await expect(
       sendTelegramNotification({ milestone: "payment_confirmed", leadPhoneE164: "+1", triggeringMessageBody: "paid" }),
     ).rejects.toThrow(/chat not found/);
+  });
+
+  it("formats a payment_proof_received notification with Proof: and Action: lines", async () => {
+    process.env.TELEGRAM_BOT_TOKEN = "bot-token";
+    process.env.TELEGRAM_CHAT_ID = "999";
+    const fetchSpy = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await sendTelegramNotification({
+      milestone: "payment_proof_received",
+      leadPhoneE164: "+213557633299",
+      triggeringMessageBody: "here's the transfer",
+      proofMediaDescription: "Image received",
+    });
+
+    expect(fetchSpy.mock.calls[0]).toBeDefined();
+    const [, options] = fetchSpy.mock.calls[0] ?? [];
+    const body = JSON.parse(options.body);
+    expect(body.text).toBe(
+      '📎 PAYMENT PROOF RECEIVED\nLead: +213557633299\nMessage: "here\'s the transfer"\n' +
+        "Proof: Image received\nAction: Please verify the payment manually.\nTime: 2026-08-23 13:37 UTC",
+    );
+  });
+
+  it("falls back to 'File received' for payment_proof_received when no proofMediaDescription is given", async () => {
+    process.env.TELEGRAM_BOT_TOKEN = "bot-token";
+    process.env.TELEGRAM_CHAT_ID = "999";
+    const fetchSpy = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await sendTelegramNotification({
+      milestone: "payment_proof_received",
+      leadPhoneE164: "+1",
+      triggeringMessageBody: "proof attached",
+    });
+
+    expect(fetchSpy.mock.calls[0]).toBeDefined();
+    const [, options] = fetchSpy.mock.calls[0] ?? [];
+    const body = JSON.parse(options.body);
+    expect(body.text).toContain("Proof: File received");
+  });
+
+  it("never adds Proof:/Action: lines for the other 3 milestones", async () => {
+    process.env.TELEGRAM_BOT_TOKEN = "bot-token";
+    process.env.TELEGRAM_CHAT_ID = "999";
+    const fetchSpy = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await sendTelegramNotification({ milestone: "payment_intent", leadPhoneE164: "+1", triggeringMessageBody: "x" });
+
+    const [, options] = fetchSpy.mock.calls[0] ?? [];
+    const body = JSON.parse(options.body);
+    expect(body.text).not.toContain("Proof:");
+    expect(body.text).not.toContain("Action:");
+  });
+});
+
+describe("describeProofMedia", () => {
+  it("describes an image", () => {
+    expect(describeProofMedia("image")).toBe("Image received");
+  });
+
+  it("describes a PDF document by mime type", () => {
+    expect(describeProofMedia("document", "application/pdf")).toBe("PDF received");
+  });
+
+  it("describes a non-PDF document with its filename when available", () => {
+    expect(describeProofMedia("document", "application/msword", "receipt.docx")).toBe("Document received (receipt.docx)");
+  });
+
+  it("describes a non-PDF document with no filename generically", () => {
+    expect(describeProofMedia("document", "application/msword")).toBe("Document received");
+  });
+
+  it("describes audio and video", () => {
+    expect(describeProofMedia("audio")).toBe("Audio received");
+    expect(describeProofMedia("video")).toBe("Video received");
+  });
+
+  it("falls back to 'File received' for an unrecognized or missing type", () => {
+    expect(describeProofMedia("sticker")).toBe("File received");
+    expect(describeProofMedia(null)).toBe("File received");
+    expect(describeProofMedia(undefined)).toBe("File received");
   });
 });

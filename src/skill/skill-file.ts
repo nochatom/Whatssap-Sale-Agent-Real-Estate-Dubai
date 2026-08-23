@@ -7,8 +7,11 @@ export const SKILL_MD_PATH = path.join(SKILL_DIR, "SKILL.md");
 const REFERENCE_PATTERN = /references\/[\w-]+\.md/g;
 
 /**
- * Only these three are safety/consistency-critical enough to hard-block
+ * Only these four are safety/consistency-critical enough to hard-block
  * invokeSkill: offer-config.md (money — a missing price gets invented),
+ * payment-config.md (same reasoning, extended to bank/payment details and
+ * per-currency prices — a missing file gets an invented IBAN or a calculated
+ * FX conversion, exactly the failure mode this file exists to prevent),
  * whatsapp-style.md (voice — without it every reply reads like a brochure),
  * behavioral-signals.md (the B/C/D/F states the §17 output contract requires
  * naming a reply's attachment to). The rest degrade gracefully to general
@@ -17,6 +20,7 @@ const REFERENCE_PATTERN = /references\/[\w-]+\.md/g;
  */
 export const REQUIRED_REFERENCES = [
   "references/offer-config.md",
+  "references/payment-config.md",
   "references/whatsapp-style.md",
   "references/behavioral-signals.md",
 ];

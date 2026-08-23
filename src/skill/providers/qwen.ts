@@ -51,7 +51,7 @@ Output ONLY a single JSON object (no markdown, no code fences, no extra text) wi
     "buyingSignal": { "level": "LOW" | "MEDIUM" | "HIGH", "evidence": string },
     "mainConcern": string,
     "whatClientIsLookingFor": string,
-    "milestone": "none" | "payment_intent" | "payment_confirmed" | "ready_to_start"
+    "milestone": "none" | "payment_intent" | "payment_confirmed" | "payment_proof_received" | "ready_to_start"
   },
   "salesStrategy": {
     "bestNextAction": string,

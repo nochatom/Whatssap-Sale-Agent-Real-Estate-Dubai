@@ -39,8 +39,13 @@ describe("classifyBehaviorState (re-exported)", () => {
     expect(classifyBehaviorState({ type: "text", body: "how much?" })).toBe("A");
   });
 
-  it("returns null for an unhandled media type", () => {
-    expect(classifyBehaviorState({ type: "image", body: null })).toBeNull();
+  it("classifies image/document/audio/video/sticker as state A too, even with a null body", () => {
+    expect(classifyBehaviorState({ type: "image", body: null })).toBe("A");
+    expect(classifyBehaviorState({ type: "document", body: null })).toBe("A");
+  });
+
+  it("returns null for a genuinely unhandled type", () => {
+    expect(classifyBehaviorState({ type: "button", body: "Yes" })).toBeNull();
   });
 });
 
@@ -53,8 +58,8 @@ describe("handleInbound", () => {
     runsCancelMock.mockReset().mockResolvedValue({});
   });
 
-  it("skips scheduling for an unclassifiable message type", async () => {
-    messageFindUniqueOrThrow.mockResolvedValue({ id: "msg_1", type: "image", body: null });
+  it("skips scheduling for a genuinely unclassifiable message type", async () => {
+    messageFindUniqueOrThrow.mockResolvedValue({ id: "msg_1", type: "button", body: null });
 
     const result = await handleInbound({
       conversationId: "conv_1",
@@ -65,6 +70,19 @@ describe("handleInbound", () => {
     expect(result).toEqual({ invoked: false, reason: "unclassifiable message type" });
     expect(sendAiReplyTrigger).not.toHaveBeenCalled();
     expect(followUpFindMany).not.toHaveBeenCalled();
+  });
+
+  it("schedules a reply for an image message with no caption (payment-proof case)", async () => {
+    messageFindUniqueOrThrow.mockResolvedValue({ id: "msg_1", type: "image", body: null });
+
+    const result = await handleInbound({
+      conversationId: "conv_1",
+      messageId: "msg_1",
+      waMessageId: "wamid.1",
+    });
+
+    expect(result).toEqual({ invoked: true, replyScheduled: true });
+    expect(sendAiReplyTrigger).toHaveBeenCalledOnce();
   });
 
   it("schedules send-ai-reply with a 2-minute delay, keyed by conversationId", async () => {

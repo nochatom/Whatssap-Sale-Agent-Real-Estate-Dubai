@@ -6,7 +6,7 @@
 export type BuyingSignalLevel = "LOW" | "MEDIUM" | "HIGH";
 
 /** Private, operator-only alert signal — see SKILL.md §6 "Milestone detection". */
-export type Milestone = "none" | "payment_intent" | "payment_confirmed" | "ready_to_start";
+export type Milestone = "none" | "payment_intent" | "payment_confirmed" | "payment_proof_received" | "ready_to_start";
 
 export interface ClientAnalysis {
   clientSector: string;
@@ -57,6 +57,15 @@ export interface SkillInputMessage {
   body: string;
   sentAt: string;
   reaction?: string;
+  /**
+   * Message.type/filename passed through so the Skill can know an image or
+   * document was attached — never the actual file content. There is no
+   * vision/multimodal capability anywhere in this codebase; this is only
+   * ever rendered as a bracketed indicator (see build-prompt.ts), never
+   * analyzed. Undefined/"text" means no media indicator is shown.
+   */
+  type?: string;
+  filename?: string;
 }
 
 export interface SkillInvocationContext {

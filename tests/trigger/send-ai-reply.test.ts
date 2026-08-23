@@ -170,18 +170,25 @@ describe("sendAiReply", () => {
     const [createArgs] = aiDecisionCreate.mock.calls[0] ?? [];
     expect(createArgs.data.messageId).toBe("msg_2");
     expect(createArgs.data.parseStatus).toBe("SUCCESS");
+  });
 
-    expect(sendOutboundTrigger).toHaveBeenCalledWith(
-      {
-        conversationId: "conv_1",
-        campaignId: "camp_1",
-        leadId: "lead_1",
-        senderPhoneNumberId: "999888777",
-        idempotencyKey: "out:reply:conv_1:wamid.2",
-        body: "AED 500 for 1-2 properties.",
-      },
-      { concurrencyKey: "999888777" },
-    );
+  it("passes message type and filename through to the Skill's context.messages (media awareness plumbing)", async () => {
+    messageFindMany.mockResolvedValue([
+      { direction: "INBOUND", body: null, type: "image", filename: null, createdAt: new Date("2026-08-01T10:00:00Z") },
+      { direction: "INBOUND", body: null, type: "document", filename: "receipt.pdf", createdAt: new Date("2026-08-01T10:01:00Z") },
+    ]);
+    invokeSkillMock.mockResolvedValue({
+      status: "success",
+      rawOutput: "...",
+      decision: { ...BASE_DECISION_FIELDS, recommendedReply: { kind: "reply" as const, text: "Thanks!" } },
+    });
+
+    await sendAiReply(PAYLOAD);
+
+    expect(invokeSkillMock.mock.calls[0]).toBeDefined();
+    const [context] = invokeSkillMock.mock.calls[0] ?? [];
+    expect(context.messages[0]).toMatchObject({ type: "image", filename: undefined });
+    expect(context.messages[1]).toMatchObject({ type: "document", filename: "receipt.pdf" });
   });
 
   it("does not trigger send-outbound when the decision is do_not_reply_yet", async () => {
@@ -434,6 +441,74 @@ describe("sendAiReply", () => {
       );
     });
 
+    it("triggers a Telegram notification when milestone is payment_proof_received, with proofMediaDescription derived from the triggering message", async () => {
+      messageFindFirst.mockResolvedValue({
+        id: "msg_2",
+        type: "image",
+        body: "",
+        mimeType: "image/jpeg",
+        filename: null,
+      });
+      invokeSkillMock.mockResolvedValue({
+        status: "success",
+        rawOutput: "...",
+        decision: {
+          ...BASE_DECISION_FIELDS,
+          clientAnalysis: { ...BASE_DECISION_FIELDS.clientAnalysis, milestone: "payment_proof_received" as const },
+          recommendedReply: { kind: "reply" as const, text: "Thanks, I'll check that and confirm." },
+        },
+      });
+
+      await sendAiReply(PAYLOAD);
+
+      expect(telegramNotificationTrigger).toHaveBeenCalledWith(
+        expect.objectContaining({ milestone: "payment_proof_received", proofMediaDescription: "Image received" }),
+      );
+    });
+
+    it("derives proofMediaDescription for a PDF document from its mimeType", async () => {
+      messageFindFirst.mockResolvedValue({
+        id: "msg_2",
+        type: "document",
+        body: "",
+        mimeType: "application/pdf",
+        filename: "receipt.pdf",
+      });
+      invokeSkillMock.mockResolvedValue({
+        status: "success",
+        rawOutput: "...",
+        decision: {
+          ...BASE_DECISION_FIELDS,
+          clientAnalysis: { ...BASE_DECISION_FIELDS.clientAnalysis, milestone: "payment_proof_received" as const },
+          recommendedReply: { kind: "reply" as const, text: "Got it, checking now." },
+        },
+      });
+
+      await sendAiReply(PAYLOAD);
+
+      expect(telegramNotificationTrigger).toHaveBeenCalledWith(
+        expect.objectContaining({ proofMediaDescription: "PDF received" }),
+      );
+    });
+
+    it("does NOT set proofMediaDescription for the other 3 milestones", async () => {
+      invokeSkillMock.mockResolvedValue({
+        status: "success",
+        rawOutput: "...",
+        decision: {
+          ...BASE_DECISION_FIELDS,
+          clientAnalysis: { ...BASE_DECISION_FIELDS.clientAnalysis, milestone: "payment_intent" as const },
+          recommendedReply: { kind: "reply" as const, text: "Sure, here's the payment link." },
+        },
+      });
+
+      await sendAiReply(PAYLOAD);
+
+      expect(telegramNotificationTrigger).toHaveBeenCalledWith(
+        expect.objectContaining({ proofMediaDescription: undefined }),
+      );
+    });
+
     it("includes the lead's name in the notification when the lead has one", async () => {
       conversationFindUniqueOrThrow.mockResolvedValue({
         id: "conv_1",
@@ -646,6 +721,26 @@ describe("sendAiReply", () => {
 
         expect(result).toEqual({ evaluated: true, status: "success", replyTriggered: true });
         expect(sendOutboundTrigger).toHaveBeenCalledOnce();
+        expect(telegramNotificationTrigger).not.toHaveBeenCalled();
+      });
+
+      it("applies the same dedup rule to payment_proof_received as the other 3 milestones", async () => {
+        aiDecisionFindFirst.mockResolvedValue({
+          parsedDecision: { clientAnalysis: { milestone: "payment_proof_received" } },
+        });
+        messageFindFirst.mockResolvedValue({ id: "msg_2", type: "image", body: "", mimeType: "image/jpeg" });
+        invokeSkillMock.mockResolvedValue({
+          status: "success",
+          rawOutput: "...",
+          decision: {
+            ...BASE_DECISION_FIELDS,
+            clientAnalysis: { ...BASE_DECISION_FIELDS.clientAnalysis, milestone: "payment_proof_received" as const },
+            recommendedReply: { kind: "reply" as const, text: "Thanks, checking now." },
+          },
+        });
+
+        await sendAiReply(PAYLOAD);
+
         expect(telegramNotificationTrigger).not.toHaveBeenCalled();
       });
     });
