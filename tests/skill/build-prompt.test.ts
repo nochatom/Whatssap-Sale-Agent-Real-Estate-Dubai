@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildSkillInput } from "@/skill/build-prompt";
-import type { SkillInputMessage, SkillInvocationContext } from "@/skill/types";
+import type { Milestone, SkillInputMessage, SkillInvocationContext } from "@/skill/types";
 
 function msg(
   direction: "inbound" | "outbound",
@@ -11,11 +11,12 @@ function msg(
   return { direction, body, sentAt: "2026-01-01T00:00:00.000Z", ...extra };
 }
 
-function contextWith(messages: SkillInputMessage[]): SkillInvocationContext {
+function contextWith(messages: SkillInputMessage[], reachedMilestones?: Milestone[]): SkillInvocationContext {
   return {
     conversationId: "conv_1",
     behaviorState: "A",
     messages,
+    reachedMilestones,
     lead: { phoneE164: "+15550000000", knownFacts: {} },
   };
 }
@@ -153,6 +154,80 @@ describe("buildSkillInput — currency checks (USD/GBP/EUR valid, AED/SAR/EGP in
     const input = buildSkillInput(contextWith([msg("inbound", "someone else quoted me AED 400")]));
     expect(input).not.toContain("Currency check");
     expect(input).not.toContain("Invalid currency check");
+  });
+});
+
+describe("buildSkillInput — workflow memory check (reached milestones)", () => {
+  it("adds no workflow-memory line when no milestone has been reached", () => {
+    const input = buildSkillInput(contextWith([msg("inbound", "hi")]));
+    expect(input).not.toContain("Workflow memory check");
+  });
+
+  it("adds no workflow-memory line when reachedMilestones is an empty array", () => {
+    const input = buildSkillInput(contextWith([msg("inbound", "hi")], []));
+    expect(input).not.toContain("Workflow memory check");
+  });
+
+  it("states a single reached milestone as historical and instructs not to resend it", () => {
+    const input = buildSkillInput(
+      contextWith(
+        [
+          msg("inbound", "I've made the payment"),
+          msg("outbound", "I've confirmed receipt of your payment. I'll start working on your videos now!"),
+          msg("inbound", "Hey"),
+        ],
+        ["payment_confirmed"],
+      ),
+    );
+    expect(input).toContain("Workflow memory check");
+    expect(input).toContain("payment_confirmed");
+    expect(input).toContain("historical event");
+    expect(input).toContain("Do NOT resend a payment confirmation");
+    expect(input).toContain("bare greeting, check-in, reaction, or an unrelated new question does NOT reopen it");
+  });
+
+  it("lists multiple reached milestones, deduped, in first-reached order", () => {
+    const input = buildSkillInput(
+      contextWith([msg("inbound", "hi")], ["payment_intent", "payment_confirmed", "payment_intent", "ready_to_start"]),
+    );
+    const idxIntent = input.indexOf("payment_intent");
+    const idxConfirmed = input.indexOf("payment_confirmed");
+    const idxReady = input.indexOf("ready_to_start");
+    expect(idxIntent).toBeGreaterThan(-1);
+    expect(idxConfirmed).toBeGreaterThan(idxIntent);
+    expect(idxReady).toBeGreaterThan(idxConfirmed);
+    // Deduped: "payment_intent" text appears in the summary line only once
+    // (plus once more inside the milestone list's own longer descriptions is
+    // not possible here since labels are distinct strings) — assert no
+    // doubled listing via a simple occurrence count of the exact token.
+    const occurrences = input.split("payment_intent").length - 1;
+    expect(occurrences).toBe(1);
+  });
+
+  it("covers every workflow stage generically (payment instructions, proof, ready-to-start), not just payment_confirmed", () => {
+    const proofInput = buildSkillInput(contextWith([msg("inbound", "ok")], ["payment_proof_received"]));
+    expect(proofInput).toContain("payment_proof_received");
+    expect(proofInput).toContain("asset acknowledgment");
+    expect(proofInput).toContain("delivery-timing message");
+
+    const readyInput = buildSkillInput(contextWith([msg("inbound", "ok")], ["ready_to_start"]));
+    expect(readyInput).toContain("ready_to_start");
+  });
+
+  it("ignores a stray 'none' entry defensively (should never be passed, but stays correct if it is)", () => {
+    const input = buildSkillInput(contextWith([msg("inbound", "hi")], ["none" as Milestone]));
+    expect(input).not.toContain("Workflow memory check");
+  });
+
+  it("coexists with the price/demo-link memory check without interfering with either", () => {
+    const input = buildSkillInput(
+      contextWith(
+        [msg("outbound", "It's $149 per video."), msg("inbound", "I've made the payment")],
+        ["payment_confirmed"],
+      ),
+    );
+    expect(input).toContain("Conversation memory check");
+    expect(input).toContain("Workflow memory check");
   });
 });
 

@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { invokeSkill, isRetryableProviderUnavailable, nextCloudflareQuotaResetAt } from "@/skill/invoke";
-import type { SkillInputMessage, SkillInvocationContext } from "@/skill/types";
+import type { Milestone, SkillInputMessage, SkillInvocationContext } from "@/skill/types";
 import { classifyBehaviorState } from "@/whatsapp/behavior-state";
 import { buildReplyIdempotencyKey } from "@/whatsapp/idempotency";
 import { resolveSender } from "@trigger/resolve-sender";
@@ -37,6 +37,37 @@ function extractMilestone(parsedDecision: Prisma.JsonValue | null | undefined): 
 }
 
 const URL_SHAPE = /https?:\/\/\S+/i;
+
+const VALID_MILESTONES: ReadonlySet<string> = new Set<Milestone>([
+  "payment_intent",
+  "payment_confirmed",
+  "payment_proof_received",
+  "ready_to_start",
+]);
+
+/**
+ * Non-"none" milestones already reached by a PRIOR turn in this conversation
+ * (oldest first, deduped) — fed into SkillInvocationContext.reachedMilestones
+ * so build-prompt.ts can state it as a deterministic fact instead of leaving
+ * the model to infer "was this workflow stage already handled?" from a long
+ * transcript. See types.ts's SkillInvocationContext.reachedMilestones for
+ * why this must come from persisted history, not model re-inference.
+ */
+async function fetchReachedMilestones(conversationId: string): Promise<Milestone[]> {
+  const priorDecisions = await prisma.aiDecision.findMany({
+    where: { conversationId },
+    orderBy: { createdAt: "asc" },
+    select: { parsedDecision: true },
+  });
+  const reached: Milestone[] = [];
+  for (const d of priorDecisions) {
+    const m = extractMilestone(d.parsedDecision);
+    if (m && VALID_MILESTONES.has(m) && !reached.includes(m as Milestone)) {
+      reached.push(m as Milestone);
+    }
+  }
+  return reached;
+}
 
 /**
  * Payment/Assets status for the ready_to_start Telegram alert — computed
@@ -127,7 +158,7 @@ export async function sendAiReply(payload: SendAiReplyPayload): Promise<SendAiRe
   }
 
   const dbFetchStartedAt = Date.now();
-  const [conversation, history] = await Promise.all([
+  const [conversation, history, reachedMilestones] = await Promise.all([
     prisma.conversation.findUniqueOrThrow({
       where: { id: payload.conversationId },
       include: { lead: true },
@@ -136,6 +167,7 @@ export async function sendAiReply(payload: SendAiReplyPayload): Promise<SendAiRe
       where: { conversationId: payload.conversationId },
       orderBy: { createdAt: "asc" },
     }),
+    fetchReachedMilestones(payload.conversationId),
   ]);
   const dbFetchMs = Date.now() - dbFetchStartedAt;
 
@@ -151,6 +183,7 @@ export async function sendAiReply(payload: SendAiReplyPayload): Promise<SendAiRe
     conversationId: conversation.id,
     behaviorState,
     messages: skillMessages,
+    reachedMilestones,
     lead: { phoneE164: conversation.lead.phoneE164, knownFacts: {} },
   };
 

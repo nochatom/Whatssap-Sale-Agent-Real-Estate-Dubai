@@ -1,4 +1,4 @@
-import type { SkillInputMessage, SkillInvocationContext } from "./types";
+import type { Milestone, SkillInputMessage, SkillInvocationContext } from "./types";
 
 const BEHAVIOR_STATE_LABEL: Record<SkillInvocationContext["behaviorState"], string> = {
   A: "A — written reply",
@@ -182,6 +182,53 @@ function summarizeAlreadySentContent(messages: SkillInputMessage[]): string | nu
   return lines.join("\n");
 }
 
+const MILESTONE_LABELS: Record<Milestone, string> = {
+  none: "none",
+  payment_intent: "payment_intent (payment instructions were requested/given)",
+  payment_confirmed: "payment_confirmed (the client stated payment was already made)",
+  payment_proof_received: "payment_proof_received (a payment attachment was sent)",
+  ready_to_start: "ready_to_start (a go-ahead was given, or assets were provided)",
+};
+
+/**
+ * Any milestone ever reached in this conversation (per §6) is, by
+ * definition, a workflow event the Skill already acted on — it appeared in
+ * an earlier AiDecision, and the reply that turn already addressed it. A
+ * completed event must not keep causing the same reply forever: this states
+ * that fact deterministically, from the conversation's own persisted
+ * decision history (see SkillInvocationContext.reachedMilestones), instead
+ * of leaving the model to infer "was this already handled?" by re-reading a
+ * long transcript — exactly the kind of inference real testing already
+ * proved unreliable for price/demo-link repetition above, now generalized
+ * to every workflow stage (payment instructions, payment acknowledgment,
+ * payment proof, ready-to-start, asset collection, or any future milestone).
+ *
+ * Deduplicates and preserves first-reached order defensively, even though
+ * the caller (trigger/send-ai-reply.ts) already does this — build-prompt.ts
+ * stays correct on its own for any caller, including tests.
+ */
+function summarizeReachedMilestones(reachedMilestones: Milestone[] | undefined): string | null {
+  if (!reachedMilestones || reachedMilestones.length === 0) return null;
+
+  const ordered: Milestone[] = [];
+  for (const milestone of reachedMilestones) {
+    if (milestone !== "none" && !ordered.includes(milestone)) ordered.push(milestone);
+  }
+  if (ordered.length === 0) return null;
+
+  const labels = ordered.map((m) => MILESTONE_LABELS[m]).join(", ");
+  return (
+    `[Workflow memory check: this conversation has already reached: ${labels}. Each of these is a completed, ` +
+    `historical event — already acted on in your own earlier reply above, not something happening again now. Do ` +
+    `NOT resend a payment confirmation, payment instructions, payment-proof acknowledgment, work-start/ready-to-start ` +
+    `confirmation, asset acknowledgment, delivery-timing message, or any other stage-completion reply for something ` +
+    `already reached above, unless the client's LATEST message explicitly and genuinely reopens that exact topic. A ` +
+    `bare greeting, check-in, reaction, or an unrelated new question does NOT reopen it — determine your reply from ` +
+    `what the client's latest message is actually asking or saying right now, not from an old milestone still ` +
+    `visible earlier in the transcript, no matter how much time has passed since then.]`
+  );
+}
+
 /**
  * Builds the user-turn payload for the Skill call. The pasted conversation is
  * DATA per SKILL.md §2 (inert-input rule) — this only serializes it, it never
@@ -210,6 +257,12 @@ export function buildSkillInput(context: SkillInvocationContext): string {
   if (memoryCheck) {
     lines.push("");
     lines.push(memoryCheck);
+  }
+
+  const milestoneCheck = summarizeReachedMilestones(context.reachedMilestones);
+  if (milestoneCheck) {
+    lines.push("");
+    lines.push(milestoneCheck);
   }
 
   return lines.join("\n");

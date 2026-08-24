@@ -76,6 +76,19 @@ export interface SkillInvocationContext {
     phoneE164: string;
     knownFacts: Record<string, unknown>;
   };
+  /**
+   * Non-"none" milestones (see Milestone above) already reached by a PRIOR
+   * AiDecision in this conversation, in the order first reached. Sourced
+   * from the DB (trigger/send-ai-reply.ts), never re-derived by the model
+   * from the free-form transcript — the same "don't trust long-conversation
+   * recall" reasoning already applied to price/demo-link/currency tracking
+   * in build-prompt.ts, extended to workflow-stage milestones so an old,
+   * already-acknowledged stage (payment confirmed, ready to start, etc.)
+   * can be flagged as historical instead of silently re-triggering the same
+   * reply on an unrelated later message. Optional so callers/tests that
+   * construct a context by hand (no DB access) need no changes.
+   */
+  reachedMilestones?: Milestone[];
 }
 
 /**

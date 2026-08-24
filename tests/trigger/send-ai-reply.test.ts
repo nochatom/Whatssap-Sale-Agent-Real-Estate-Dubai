@@ -197,6 +197,59 @@ describe("sendAiReply", () => {
     expect(context.messages[1]).toMatchObject({ type: "document", filename: "receipt.pdf" });
   });
 
+  describe("reachedMilestones (deterministic workflow-memory plumbing)", () => {
+    it("passes an empty array to the Skill's context when no prior AiDecision has a milestone", async () => {
+      aiDecisionFindMany.mockResolvedValue([]);
+      invokeSkillMock.mockResolvedValue({
+        status: "success",
+        rawOutput: "...",
+        decision: { ...BASE_DECISION_FIELDS, recommendedReply: { kind: "reply" as const, text: "Hi!" } },
+      });
+
+      await sendAiReply(PAYLOAD);
+
+      const [context] = invokeSkillMock.mock.calls[0] ?? [];
+      expect(context.reachedMilestones).toEqual([]);
+    });
+
+    it("collects distinct non-'none' milestones from prior AiDecisions, oldest first, deduped", async () => {
+      aiDecisionFindMany.mockResolvedValue([
+        { parsedDecision: { clientAnalysis: { milestone: "none" } } },
+        { parsedDecision: { clientAnalysis: { milestone: "payment_intent" } } },
+        { parsedDecision: { clientAnalysis: { milestone: "payment_intent" } } },
+        { parsedDecision: { clientAnalysis: { milestone: "payment_confirmed" } } },
+      ]);
+      invokeSkillMock.mockResolvedValue({
+        status: "success",
+        rawOutput: "...",
+        decision: { ...BASE_DECISION_FIELDS, recommendedReply: { kind: "reply" as const, text: "Hey!" } },
+      });
+
+      await sendAiReply(PAYLOAD);
+
+      const [context] = invokeSkillMock.mock.calls[0] ?? [];
+      expect(context.reachedMilestones).toEqual(["payment_intent", "payment_confirmed"]);
+    });
+
+    it("ignores a decision with no parseable milestone (older shape, null, or non-object) without throwing", async () => {
+      aiDecisionFindMany.mockResolvedValue([
+        { parsedDecision: null },
+        { parsedDecision: { clientAnalysis: {} } },
+        { parsedDecision: { clientAnalysis: { milestone: "ready_to_start" } } },
+      ]);
+      invokeSkillMock.mockResolvedValue({
+        status: "success",
+        rawOutput: "...",
+        decision: { ...BASE_DECISION_FIELDS, recommendedReply: { kind: "reply" as const, text: "Hey!" } },
+      });
+
+      await sendAiReply(PAYLOAD);
+
+      const [context] = invokeSkillMock.mock.calls[0] ?? [];
+      expect(context.reachedMilestones).toEqual(["ready_to_start"]);
+    });
+  });
+
   it("does not trigger send-outbound when the decision is do_not_reply_yet", async () => {
     invokeSkillMock.mockResolvedValue({
       status: "success",
@@ -540,7 +593,7 @@ describe("sendAiReply", () => {
         );
       });
 
-      it("does NOT compute paymentStatus/assetsStatus (or query AiDecision history) for the other 3 milestones", async () => {
+      it("does NOT compute paymentStatus/assetsStatus for the other 3 milestones (reachedMilestones' own AiDecision query still runs, unconditionally, for every turn)", async () => {
         invokeSkillMock.mockResolvedValue({
           status: "success",
           rawOutput: "...",
@@ -556,7 +609,6 @@ describe("sendAiReply", () => {
         expect(telegramNotificationTrigger).toHaveBeenCalledWith(
           expect.objectContaining({ paymentStatus: undefined, assetsStatus: undefined }),
         );
-        expect(aiDecisionFindMany).not.toHaveBeenCalled();
       });
     });
 
