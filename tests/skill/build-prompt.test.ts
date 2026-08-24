@@ -231,6 +231,100 @@ describe("buildSkillInput — workflow memory check (reached milestones)", () =>
   });
 });
 
+describe("buildSkillInput — repetition alert (repeated outbound replies)", () => {
+  it("adds no repetition-alert line when nothing repeats", () => {
+    const input = buildSkillInput(
+      contextWith([msg("inbound", "hi"), msg("outbound", "Hi! What property are you working with?")]),
+    );
+    expect(input).not.toContain("Repetition alert");
+  });
+
+  it("adds no repetition-alert line for a single occurrence of a long reply", () => {
+    const input = buildSkillInput(
+      contextWith([msg("outbound", "I've confirmed receipt of your payment. I'll start working on your videos now!")]),
+    );
+    expect(input).not.toContain("Repetition alert");
+  });
+
+  it("flags a substantial reply that has gone out word-for-word more than once", () => {
+    const input = buildSkillInput(
+      contextWith([
+        msg("inbound", "I've made the payment"),
+        msg("outbound", "I've confirmed receipt of your payment. I'll start working on your videos now!"),
+        msg("inbound", "Hey"),
+        msg("outbound", "I've confirmed receipt of your payment. I'll start working on your videos now!"),
+        msg("inbound", "Hey"),
+      ]),
+    );
+    expect(input).toContain("Repetition alert");
+    expect(input).toContain("sent 2 times");
+    expect(input).toContain("I've confirmed receipt of your payment");
+    expect(input).toContain("hard failure");
+  });
+
+  it("treats curly and straight apostrophe/quote variants as the same text (the exact real-world case that caused the bug)", () => {
+    const input = buildSkillInput(
+      contextWith([
+        msg("outbound", "I've confirmed receipt of your payment. I'll start working on your videos now!"),
+        msg("outbound", "I’ve confirmed receipt of your payment. I’ll start working on your videos now!"),
+      ]),
+    );
+    expect(input).toContain("Repetition alert");
+    expect(input).toContain("sent 2 times");
+  });
+
+  it("does not flag short, generic repeats (e.g. 'Thanks!' said twice)", () => {
+    const input = buildSkillInput(
+      contextWith([
+        msg("outbound", "Thanks!"),
+        msg("inbound", "np"),
+        msg("outbound", "Thanks!"),
+      ]),
+    );
+    expect(input).not.toContain("Repetition alert");
+  });
+
+  it("only counts outbound messages — the client repeating their own words doesn't count", () => {
+    const input = buildSkillInput(
+      contextWith([
+        msg("inbound", "can you do a video for my other property too please"),
+        msg("outbound", "Sure, happy to help with that!"),
+        msg("inbound", "can you do a video for my other property too please"),
+      ]),
+    );
+    expect(input).not.toContain("Repetition alert");
+  });
+
+  it("reports each distinct repeated message separately when more than one has repeated", () => {
+    const input = buildSkillInput(
+      contextWith([
+        msg("outbound", "I've confirmed receipt of your payment. I'll start working on your videos now!"),
+        msg("outbound", "I've confirmed receipt of your payment. I'll start working on your videos now!"),
+        msg("outbound", "Perfect, let's get your property photos or listing link whenever you're ready!"),
+        msg("outbound", "Perfect, let's get your property photos or listing link whenever you're ready!"),
+      ]),
+    );
+    expect(input).toContain("I've confirmed receipt of your payment");
+    expect(input).toContain("Perfect, let's get your property photos");
+  });
+
+  it("coexists with the milestone and price/demo-link checks without interfering with either", () => {
+    const input = buildSkillInput(
+      contextWith(
+        [
+          msg("outbound", "It's $149 per video."),
+          msg("outbound", "I've confirmed receipt of your payment. I'll start working on your videos now!"),
+          msg("outbound", "I've confirmed receipt of your payment. I'll start working on your videos now!"),
+        ],
+        ["payment_confirmed"],
+      ),
+    );
+    expect(input).toContain("Conversation memory check");
+    expect(input).toContain("Workflow memory check");
+    expect(input).toContain("Repetition alert");
+  });
+});
+
 describe("buildSkillInput — media indicator", () => {
   it("appends [image attached] for an image message", () => {
     const input = buildSkillInput(contextWith([msg("inbound", "", { type: "image" })]));

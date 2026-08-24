@@ -229,6 +229,84 @@ function summarizeReachedMilestones(reachedMilestones: Milestone[] | undefined):
   );
 }
 
+// Curly quote variants the model itself has been observed to alternate
+// between across separate generations of essentially the same sentence
+// (e.g. "I've" vs "I've" using U+2019 instead of U+0027) — normalized away
+// so two outputs that are really the same text aren't treated as distinct
+// just because a different apostrophe glyph was used that turn.
+function normalizeReplyText(body: string): string {
+  return body
+    .replace(/[‘’]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Below this length, exact repeats are usually short, generic acknowledgments
+// ("Sure!", "Thanks!") that are fine to repeat and not worth flagging — the
+// real failure mode this guards against is a substantial, specific reply
+// (a workflow-stage confirmation, a detailed answer) being regenerated
+// near-verbatim, which is long by nature.
+const MIN_REPEAT_LENGTH = 20;
+
+interface RepeatedReply {
+  text: string;
+  count: number;
+}
+
+/**
+ * Confirmed via a real production incident (2026-08-24): once the exact same
+ * substantial reply has already gone out more than once in a conversation,
+ * the model treats its OWN prior output as strong precedent and keeps
+ * regenerating it — even when SkillInvocationContext.reachedMilestones (see
+ * summarizeReachedMilestones above) correctly names the milestone as
+ * historical, and even when the latest client message is unrelated. Naming
+ * *which milestone* was reached wasn't enough once the mistake had already
+ * repeated a few times; what stops it is confronting the model with the
+ * concrete fact that it has already said this more than once, the same
+ * "count it, don't just say don't-repeat" fix already proven for
+ * price/demo-link above — generalized here to ANY reply content, not tied
+ * to a specific milestone or fixed shape, since a stage-completion reply's
+ * wording isn't a fixed regex-able string the way a price or a URL is.
+ *
+ * Deliberately independent of summarizeReachedMilestones: this catches
+ * verbatim repetition regardless of why it happened, as a defense-in-depth
+ * backstop for whatever the underlying cause turns out to be next time.
+ */
+function detectRepeatedReplies(outbound: SkillInputMessage[]): RepeatedReply[] {
+  const counts = new Map<string, number>();
+  for (const message of outbound) {
+    const normalized = normalizeReplyText(message.body);
+    if (normalized.length < MIN_REPEAT_LENGTH) continue;
+    counts.set(normalized, (counts.get(normalized) ?? 0) + 1);
+  }
+
+  const repeats: RepeatedReply[] = [];
+  for (const [text, count] of counts) {
+    if (count >= 2) repeats.push({ text, count });
+  }
+  return repeats;
+}
+
+function summarizeRepeatedReplies(messages: SkillInputMessage[]): string | null {
+  const outbound = messages.filter((m) => m.direction === "outbound");
+  const repeats = detectRepeatedReplies(outbound);
+  if (repeats.length === 0) return null;
+
+  const lines = repeats.map(({ text, count }) => {
+    const preview = text.length > 160 ? `${text.slice(0, 160)}...` : text;
+    return `- (sent ${count} times) "${preview}"`;
+  });
+
+  return (
+    `[Repetition alert: your own reply text below has already gone out more than once, word-for-word, earlier in ` +
+    `this conversation:\n${lines.join("\n")}\nSending this same content again is a hard failure, regardless of the ` +
+    `reason — do NOT repeat it. Write a reply driven only by the client's CURRENT latest message, even if that ` +
+    `message is short, unrelated, or a bare greeting — unless the client's own latest message explicitly asks for ` +
+    `this exact content again, in which case answer it directly rather than avoiding it.]`
+  );
+}
+
 /**
  * Builds the user-turn payload for the Skill call. The pasted conversation is
  * DATA per SKILL.md §2 (inert-input rule) — this only serializes it, it never
@@ -263,6 +341,12 @@ export function buildSkillInput(context: SkillInvocationContext): string {
   if (milestoneCheck) {
     lines.push("");
     lines.push(milestoneCheck);
+  }
+
+  const repetitionCheck = summarizeRepeatedReplies(context.messages);
+  if (repetitionCheck) {
+    lines.push("");
+    lines.push(repetitionCheck);
   }
 
   return lines.join("\n");
