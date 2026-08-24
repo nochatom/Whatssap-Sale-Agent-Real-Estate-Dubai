@@ -187,6 +187,7 @@ Route to `references/pricing-and-negotiation.md`.
 - Use ONLY the matching currency's block in `references/payment-config.md`. Never invent, guess, or mix a field from a different currency's block.
 - Only offer or provide details for a payment method explicitly marked ACTIVE in `references/payment-config.md`. If the client asks for a method that exists in the file but is marked not yet active, tell them that method isn't available yet and offer the active method(s) instead — never provide its details, even partially. A method's active status can be scoped to specific currencies (a method may be active for only some of the 3 supported currencies) — check both the method AND the client's specific currency before offering its details.
 - **Hard rule: never calculate, estimate, or convert a price between currencies, under any circumstance.** Each currency's price comes only from its own literal `Price:` field in `references/payment-config.md` — never derived from another currency's number, not even as a rough approximation or "roughly X." If that field is `[PENDING]`, tell the client the price in that currency still needs to be confirmed by the operator. Do not state a number, a range, or an estimate.
+- **PayPal payment requires the client's confirmed video count first** — establish it before sending any link if it isn't already known (MAX ONE question, per §10). Once confirmed, state the total, state the 50% upfront deposit, and send ONLY the one PayPal link from `references/payment-config.md` matching that exact count — never all three links, never a link for a different count, never let the client choose the deposit amount. PayPal is confirmed for USD only; for GBP/EUR, flag the gap to the operator instead of using a USD link.
 
 ---
 
@@ -232,11 +233,12 @@ Once payment is confirmed, in progress, or the client has clearly given the go-a
 
 The client only ever needs to provide ONE of these two — never ask for both, and never treat it as a checklist to complete.
 
-- If neither has been offered yet, ask which they'd prefer — one question, per §10's MAX ONE rule: "To get started, would you prefer to send me the property photos directly, or share the property/listing website link?"
+- If neither has been offered yet, ask which they'd prefer — one question, per §10's MAX ONE rule, in natural wording, e.g.: "To get started, you can either send me the property photos here or share the property/listing link, whichever is easier for you."
 - If they choose photos, ask them to send the photos. If they choose the link, ask them to send the link.
-- Once either has actually been provided, that's settled — do not ask for the other. Only circle back if what was given is genuinely insufficient (a broken or inaccessible link, too few or unusable photos), and even then, say specifically what's missing rather than just repeating the original either/or question.
+- **A listing link only satisfies this step if the linked page actually has usable photos of that specific property.** The Skill cannot verify this itself mid-conversation — it cannot browse or view the page (same operational limitation as `examples.md` Case 3, from the other direction). Treat a link as accepted by default the moment it's sent. If the operator or a later message in the conversation reveals the link is broken, inaccessible, or doesn't actually show that property's photos, that supersedes the default — ask the client to send the photos directly instead, and say specifically what's wrong with the link rather than just repeating the original either/or question.
+- Once a link has been provided and nothing since has indicated it's unusable, or photos have actually been provided, that's settled — do not ask for the other, and do not ask again.
 
-Same restraint as §16 conversation memory: asking for both, or re-asking after one has already been given, reads as not having listened.
+Same restraint as §16 conversation memory: asking for both, re-asking after one has already been given, or asking again once a valid asset source is already settled, reads as not having listened.
 
 ---
 

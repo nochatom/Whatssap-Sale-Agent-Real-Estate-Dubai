@@ -35,10 +35,10 @@ Fixed, per-currency, and shared by every payment method below — not restated s
 ## Payment methods
 
 - **Bank Transfer — NOT ACTIVE.** Do not mention, offer, or provide any detail from this section to a client under any circumstances while it remains marked not active.
-- **PayPal — ACTIVE.** All three currencies. **Only the payment link is ever given to a client — never an email or account name.**
+- **PayPal — ACTIVE, USD only.** Not a single flat-price link anymore — one of three dedicated deposit links, chosen by confirmed video count (see the PayPal section below). **Only the one matching payment link is ever given to a client — never an email or account name.**
 - **Stripe — NOT YET ACTIVE.** Do not mention, offer, or provide any detail from this section to a client under any circumstances while it remains marked not yet active.
 
-**PayPal is currently the only payment method offered to clients.** If the client doesn't specify a method, offer PayPal (covers all three currencies). If they ask for a method that isn't ACTIVE (bank transfer or Stripe), tell them that method isn't available and offer PayPal instead — never mention why, never offer to switch it on.
+**PayPal is currently the only payment method offered to clients.** If the client doesn't specify a method, offer PayPal. If they ask for a method that isn't ACTIVE (bank transfer or Stripe), tell them that method isn't available and offer PayPal instead — never mention why, never offer to switch it on. PayPal is confirmed for USD only — if a client has specified or established GBP/EUR, flag the gap to the operator instead of offering a USD link or inventing a GBP/EUR one.
 
 ---
 
@@ -62,10 +62,21 @@ This section exists so the payment-method architecture doesn't need redesigning 
 
 - Payment method: PayPal
 - Service: Professional Real Estate Property Marketing Video
-- Payment link: https://www.paypal.com/ncp/payment/8M9CEMMLHSHAN
-- Currency: USD, GBP, or EUR — see Prices above for the exact figure per currency.
+- Currency: **USD only.** Confirmed 2026-08-25. GBP/EUR are not yet confirmed for PayPal — flag the gap to the operator rather than using a USD link/amount or inventing a GBP/EUR one.
 
-**The payment link above is the ONLY payment detail ever given to a client for PayPal — never an email, account name, or any other identifier, even if the client asks for one directly.** Use the link exactly as written, character-for-character — never shortened, modified, re-hosted, or regenerated. If the client asks to pay via PayPal, or asks how to pay / for a payment link without naming a method, this link is the answer, in whichever currency they've specified or already established.
+**Payment is a 50% upfront deposit — never the full total — paid via the one dedicated link that matches the client's exact, confirmed video count.** There is no longer a single, video-count-independent link. The remaining 50% is paid after the videos are delivered (see `references/offer-config.md`'s Payment terms).
+
+| Videos | Total (see Prices above) | 50% upfront deposit | PayPal link |
+|---|---|---|---|
+| 1 | $149 | **$74.50** | https://www.paypal.com/ncp/payment/8M9CEMMLHSHAN |
+| 2 | $280 | **$140** | https://www.paypal.com/ncp/payment/5EPS9L7R333R4 |
+| 3 | $390 | **$195** | https://www.paypal.com/ncp/payment/B78TY84ENGHBC |
+
+**4 or more videos: deposit amount and link are not yet confirmed.** Never extrapolate a deposit, never reuse one of the three links above for a different count — flag the gap to the operator under SALES STRATEGY and tell the client that volume needs a confirmed price and payment link from the operator first.
+
+Before sending any link, the client's video count must already be confirmed (establish it first if it isn't — MAX ONE question, per SKILL.md §10). Once confirmed: state the total, state the 50% upfront deposit, and send ONLY the one link matching that exact count in the same reply — never all three links, never a link for a different count than confirmed, never let the client choose or state the deposit amount themselves.
+
+**Each link above is the ONLY payment detail ever given to a client for PayPal — never an email, account name, or any other identifier, even if the client asks for one directly.** Use the matching link exactly as written, character-for-character — never shortened, modified, re-hosted, or regenerated.
 
 ---
 
@@ -83,8 +94,9 @@ This section exists so the payment-method architecture doesn't need redesigning 
 
 - **Never calculate, estimate, or convert a price between currencies** — not even as a rough approximation. A `[PENDING]` price means "tell the client it needs confirming," never "compute it."
 - Never invent, guess, or state a bank/account/payment-link value that isn't literally written above.
-- **Never invent, modify, shorten, or generate a payment link.** Use only the exact link written in this file — character-for-character, every time, regardless of currency.
-- **Never state a PayPal email, account name, or any identifier other than the payment link.** The link is the only PayPal detail this Skill is ever allowed to give a client — even if the client explicitly asks "what's your PayPal email?"
+- **Never invent, modify, shorten, or generate a payment link.** Use only the exact link written in this file — character-for-character, every time.
+- **Never send more than one PayPal link in the same reply, and never send a link for a video count different from what the client confirmed.** Each of the three links is tied to exactly one video count and deposit amount — sending the wrong one, or more than one, is a hard failure, not a convenience. Never let the client choose or state the deposit amount themselves.
+- **Never state a PayPal email, account name, or any identifier other than the matching payment link.** The link is the only PayPal detail this Skill is ever allowed to give a client — even if the client explicitly asks "what's your PayPal email?"
 - Never mix a field from one currency's block into another, or from one payment method into another.
 - Only ever offer a payment method marked ACTIVE above (currently: PayPal only). Never mention a not-active or not-yet-active method's details to a client — even partially, even if asked directly by name.
 - If a field for an active method/currency combination is `[PENDING]` or blank, flag the gap to the operator under SALES STRATEGY and tell the client that detail needs to be confirmed — never guess, never approximate, never stay silent about the gap.
