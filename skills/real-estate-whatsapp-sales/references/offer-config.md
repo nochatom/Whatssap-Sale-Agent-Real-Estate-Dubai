@@ -8,24 +8,26 @@ Confirmed by the operator (Oualid) on 2026-08-09.
 
 ## The product
 
-One video per property. 30–60 seconds. Built entirely from the client's existing listing photos — no on-site filming, no physical shoot.
+One video per property, in ONE format. 30–60 seconds. Built entirely from the client's existing listing photos — no on-site filming, no physical shoot.
 
-**Standard formats delivered (all three, every order):**
+**Format — the client picks exactly ONE, not all three:**
 - 9:16 vertical (Reels / TikTok / Stories)
 - 1:1 square (feed posts)
 - 16:9 horizontal (website / landscape)
+
+The $149 price covers ONE video in ONE of these formats, chosen by the client — never all three, never more than one, for the base price. If the client hasn't said which format yet, ask (MAX ONE question, per SKILL.md §10) before finalizing the order — never assume or default to a specific format. Additional formats of the same video are not part of the base offer; pricing for extra formats is not currently set — never quote a number for that, flag it to the operator instead.
 
 **Captions/text overlays, when included:** English only. No translation offered.
 
 ## Pricing
 
-**$149 USD per video/property.** Flat — not tiered by volume or property count. This is the official starting price, and the only number to open with.
+**Price is PER VIDEO, tiered by how many videos/properties are ordered together in USD — not a flat per-package rate.** $149 for one video is the official starting price and the number to open with when scope isn't yet known. Once the client's video count is known, use the exact confirmed tier from `references/payment-config.md`'s multi-video pricing table (1 video = $149, 2 = $280 total, 3 = $390 total) — always state the TOTAL for that count directly from the table, never computed by multiplying a per-video figure yourself. 4+ videos in one order is not yet confirmed — flag it to the operator rather than inventing or extrapolating a number.
 
-State it as-is: never rounded down, never pre-discounted, never framed as "starting from" a lower figure. Any number below $149 is a negotiated outcome, not a default — reached only by following `references/pricing-and-negotiation.md`, never invented or offered unprompted.
+State the applicable figure as-is: never rounded down, never pre-discounted beyond the confirmed tiers, never framed as "starting from" a lower figure. Any number below the confirmed tier price is a negotiated outcome, not a default — reached only by following `references/pricing-and-negotiation.md`, never invented or offered unprompted.
 
-Once $149 has been stated to this client anywhere earlier in the conversation, do not restate it again unless the client's own latest message actually asks about price, cost, or how much — a bare "hey"/"hello"/check-in with nothing else is not that. Repeating it unprompted, even framed as "confirming" or "as a reminder," is a hard failure, not a courtesy (see SKILL.md §16).
+Once a price has been stated to this client anywhere earlier in the conversation, do not restate it again unless the client's own latest message actually asks about price, cost, or how much — a bare "hey"/"hello"/check-in with nothing else is not that. Repeating it unprompted, even framed as "confirming" or "as a reminder," is a hard failure, not a courtesy (see SKILL.md §16).
 
-**Currency: open in USD by default.** $149 is the default opening price, stated in USD, unless the client has already specified or established a different one of the 3 supported currencies (USD/GBP/EUR — see `references/payment-config.md` for the GBP/EUR prices and SKILL.md §11 for the currency-selection flow). Never calculate a GBP/EUR figure from $149 — each currency's price is its own literal number in `references/payment-config.md`, never derived from this one. If the conversation history contains a figure in a currency that is not one of USD/GBP/EUR (e.g. AED, SAR, EGP), that is stale, superseded pricing information — never quote it, never treat it as valid or already-confirmed, and never let it change or "average out" the number you state now.
+**Currency: open in USD by default.** $149 (single video) is the default opening price, stated in USD, unless the client has already specified or established a different one of the 3 supported currencies (USD/GBP/EUR — see `references/payment-config.md` for the GBP/EUR prices and SKILL.md §11 for the currency-selection flow). The multi-video tier table is USD-only — GBP/EUR only have a confirmed single-video price; for more than one video in GBP/EUR, flag the gap to the operator rather than converting or inventing a figure. Never calculate a GBP/EUR figure from a USD number — each currency's price is its own literal number in `references/payment-config.md`, never derived from another. If the conversation history contains a figure in a currency that is not one of USD/GBP/EUR (e.g. AED, SAR, EGP), that is stale, superseded pricing information — never quote it, never treat it as valid or already-confirmed, and never let it change or "average out" the number you state now.
 
 ## Demo video
 

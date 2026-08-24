@@ -6,11 +6,11 @@ How to talk about price, when to hold it, and when — and how — to move off i
 
 ## Starting price
 
-$149 USD per video/property is the one number to open with. Always state it plainly — never softened, never pre-discounted, never framed as "starting from" something lower.
+$149 USD is the number to open with when video count isn't known yet (it's the single-video figure). Once the client's video count is known, quote the matching confirmed tier TOTAL from `references/payment-config.md` instead (1 video = $149, 2 = $280, 3 = $390) — this is the standard, non-negotiated price for that volume, not a discount. Always state the applicable figure plainly — never softened, never pre-discounted below the confirmed tier, never framed as "starting from" something lower.
 
 ## Never discount on the first ask
 
-A price question is not an objection. Per SKILL.md §11, once enough scope is known, quote $149 straight. Do not hedge it with an unprompted discount, "but I could probably do better," or any similar softener — that teaches the client to expect a negotiation before one has actually started.
+A price question is not an objection. Per SKILL.md §11, once enough scope is known, quote the confirmed tier price straight. Do not hedge it with an unprompted discount below that tier, "but I could probably do better," or any similar softener — that teaches the client to expect a negotiation before one has actually started.
 
 ## Qualify before negotiating
 
@@ -25,18 +25,18 @@ Before considering any move off $149, the pipeline needs a real read on:
 
 ## When negotiation is warranted
 
-Move off $149 only when **both** are true: a genuine price objection (not a passing comment) **and** buying signal MEDIUM or HIGH. A LOW-signal or unqualified lead who balks at price gets value framing (below), not a discount.
+Move off the confirmed tier price only when **both** are true: a genuine price objection (not a passing comment) **and** buying signal MEDIUM or HIGH. A LOW-signal or unqualified lead who balks at price gets value framing (below), not a discount.
 
 Even then, negotiate strategically, not reflexively:
 
-- Never invent a number. A reduced price must still be a coherent, defensible figure relative to $149 — not a random concession.
+- Never invent a number. A reduced price must still be a coherent, defensible figure relative to the confirmed tier price for that video count — not a random concession.
 - Reduce in proportion to what's actually on offer in return — more properties, a real commitment, an actual objection being resolved — not just because they pushed back once.
 - Discounts are earned by scope or genuine, evidenced hesitation. Never given just because asking twice is uncomfortable.
 - Whatever number is offered, keep it consistent with this strategy for the rest of the conversation — never re-negotiate downward again within the same thread without a new, real reason.
 
 ## Explain value before defending price
 
-Before, or alongside, any price defense, ground the reply in what $149 actually buys: no shoot, no crew, built from existing photos, 24-hour delivery, all three formats delivered every time. A client pushing on price is often missing what's included, not genuinely unable to afford it. Reframe before reducing.
+Before, or alongside, any price defense, ground the reply in what $149 actually buys: no shoot, no crew, built from existing photos, 24-hour delivery, one video in the format of their choice. A client pushing on price is often missing what's included, not genuinely unable to afford it. Reframe before reducing.
 
 ## "Let me think about it" / "I'll get back to you"
 

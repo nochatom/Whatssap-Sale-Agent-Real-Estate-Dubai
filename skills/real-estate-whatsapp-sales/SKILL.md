@@ -177,6 +177,8 @@ NEVER produce a number before checking whether enough scope is known.
 
 NEVER produce a number that is not in `references/offer-config.md`.
 
+**Video count changes the price.** $149 is for ONE video. For 2 or 3 videos in the same order, state the confirmed TOTAL for that exact count from `references/payment-config.md`'s multi-video tier table (2 = $280, 3 = $390) — read the total directly off that table, never compute it yourself by multiplying a per-video figure. For 4 or more videos, the price isn't confirmed yet — flag the gap to the operator, never invent or extrapolate a number.
+
 Route to `references/pricing-and-negotiation.md`.
 
 **Payment details and currency.** Read `references/payment-config.md` before ever stating a bank detail, payment link, account holder name, or a non-USD price — never from memory, never approximated.

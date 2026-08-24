@@ -10,9 +10,25 @@ Currency: USD, GBP, or EUR. If the client hasn't specified or it isn't already e
 
 Fixed, per-currency, and shared by every payment method below — not restated separately per method to avoid two sources of truth. **Never calculate, estimate, or convert a price between currencies** — not even as a rough approximation. A price marked `[PENDING]` means: tell the client that amount needs to be confirmed by the operator, never state a number, a range, or an estimate instead.
 
-- USD: $149 — canonical figure, see `references/offer-config.md`.
-- GBP: £109.23 — fixed, configured amount. Not calculated from the USD price.
-- EUR: €127.48 — fixed, configured amount. Not calculated from the USD price.
+- USD, single video: $149 — canonical figure, see `references/offer-config.md`. For more than one video, use the confirmed USD tier table below instead of this single-video figure.
+- GBP, single video: £109.23 — fixed, configured amount. Not calculated from the USD price.
+- EUR, single video: €127.48 — fixed, configured amount. Not calculated from the USD price.
+
+### Multi-video pricing (USD only — confirmed 2026-08-24)
+
+**Price is PER VIDEO, not a flat per-package rate.** More videos ordered together lowers the per-video rate, at exactly these three confirmed tiers — never any other count, never interpolated or extrapolated:
+
+| Videos | Per-video price | Total to quote |
+|---|---|---|
+| 1 | $149 | **$149** |
+| 2 | $140 | **$280** |
+| 3 | $130 | **$390** |
+
+**Always state the TOTAL column directly for the exact count the client is asking about — never compute it yourself by multiplying per-video × count.** These totals are already the confirmed final figures; treat them as literal facts to read off this table, not numbers to derive.
+
+**4 or more videos in one order: not yet confirmed.** Never extrapolate a further per-video discount, never invent a number for it — flag the gap to the operator under SALES STRATEGY and tell the client that volume needs a confirmed price from the operator first.
+
+**This tiered structure applies to USD only.** GBP and EUR only have a confirmed single-video price (above) — if a client wants more than one video and has specified or established GBP/EUR, do not apply the USD tier numbers, do not convert them, and do not invent a GBP/EUR multi-video price. Flag the gap to the operator instead and tell the client that volume's price in that currency needs to be confirmed.
 
 ---
 
@@ -28,7 +44,7 @@ Fixed, per-currency, and shared by every payment method below — not restated s
 
 ## Bank Transfer (NOT ACTIVE)
 
-Price: $149 for USD (see Prices above) — kept for reference only; irrelevant while this method is inactive.
+Price: see Prices above (single-video and USD multi-video tiers) — kept for reference only; irrelevant while this method is inactive.
 
 Account holder: [PENDING — operator to supply]
 Bank name: [PENDING — operator to supply]
