@@ -2,6 +2,7 @@ import { loadSkillMarkdown } from "./skill-file";
 import { invokeAnthropic } from "./providers/anthropic";
 import { CloudflareQuotaExceededError, invokeCloudflare } from "./providers/cloudflare";
 import { invokeGemini } from "./providers/gemini";
+import { invokeOxAlpha } from "./providers/oxalpha";
 import { invokeQwen } from "./providers/qwen";
 import type { SkillProvider } from "./providers/types";
 import type { SkillInvocationContext, SkillInvocationResult } from "./types";
@@ -16,6 +17,7 @@ const PROVIDERS: Record<string, SkillProvider> = {
   anthropic: invokeAnthropic,
   cloudflare: invokeCloudflare,
   gemini: invokeGemini,
+  oxalpha: invokeOxAlpha,
   qwen: invokeQwen,
 };
 
@@ -146,26 +148,132 @@ async function tryCloudflareFallbackForQwen(
 }
 
 /**
- * AI_PROVIDER selects which underlying AI API generates replies — "qwen"
- * (primary, default), "cloudflare", "anthropic", or "gemini". Unset or
- * unrecognized falls back to "qwen" rather than guessing. Every provider
- * implements the identical Skill contract (same SKILL_MARKDOWN, same
- * extraction prompt, same SkillDecision validation) — swapping providers is
- * only ever this one env var, never a code change.
+ * Terminal Ox Alpha stage for invokeDefaultChain (see below). Mirrors the
+ * shape of tryCloudflareFallbackForQwen/tryGeminiFallback — own-required-
+ * config check, a thrown error becomes a terminal parse_failure, and a
+ * RETURNED parse_failure from Ox Alpha itself is passed through as-is, since
+ * there's nothing after Ox Alpha in this chain to fall back to.
+ * markAsRetryable carries forward whether the earlier Cloudflare failure (if
+ * that's what's being reported as primaryErr) was specifically its own quota
+ * exhaustion — if so, and Ox Alpha also fails, the combined failure is still
+ * marked retryable against Cloudflare's known reset time, same reasoning
+ * already used when Cloudflare was the terminal stage.
+ */
+async function tryOxAlphaFallback(
+  context: SkillInvocationContext,
+  primaryErr: Error,
+  markAsRetryable: boolean,
+): Promise<SkillInvocationResult> {
+  const retryPrefix = markAsRetryable ? PROVIDER_UNAVAILABLE_RETRY_MARKER : "provider_unavailable";
+
+  if (!process.env.OPENROUTER_API_KEY) {
+    console.error("invokeSkill: no Ox Alpha fallback is configured (OPENROUTER_API_KEY not set)", {
+      reason: primaryErr.message,
+    });
+    return {
+      status: "parse_failure",
+      reason: `${retryPrefix}: ${primaryErr.message}; no fallback provider configured`,
+      rawOutput: "",
+    };
+  }
+
+  try {
+    const fallbackResult = await invokeOxAlpha(context, SKILL_MARKDOWN);
+    console.log("invokeSkill: Ox Alpha fallback succeeded", { status: fallbackResult.status });
+    return fallbackResult;
+  } catch (fallbackErr) {
+    const fallbackReason = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+    console.error("invokeSkill: Ox Alpha fallback also failed", { reason: fallbackReason });
+    return {
+      status: "parse_failure",
+      reason: `${retryPrefix}: ${primaryErr.message}; fallback to Ox Alpha also failed: ${fallbackReason}`,
+      rawOutput: "",
+    };
+  }
+}
+
+/**
+ * Default routing policy — used only when AI_PROVIDER is unset (see the
+ * early-return in invokeSkill below). Priority: Qwen -> Cloudflare -> Ox
+ * Alpha. Reordered from the previous Ox Alpha -> Qwen -> Cloudflare default;
+ * every explicit AI_PROVIDER selector (qwen/cloudflare/anthropic/gemini/
+ * oxalpha) is untouched and keeps its own separate, pre-existing fallback
+ * behavior via the generic dispatch further down — this function is ONLY the
+ * unset-env-var default policy, not a named provider.
  *
- * Three independent fallback paths, kept separate because their retry
- * semantics genuinely differ:
+ * Same "a RETURNED parse_failure is ALSO fallback-worthy, not just a thrown
+ * error" semantics as the previous default, re-applied to the new order:
+ * Qwen and Cloudflare are now the two non-terminal stages; Ox Alpha is now
+ * the terminal stage (see tryOxAlphaFallback above), so ITS OWN parse_failure
+ * is returned directly — there's nothing after it in this chain.
+ */
+async function invokeDefaultChain(context: SkillInvocationContext): Promise<SkillInvocationResult> {
+  let qwenErr: Error;
+  try {
+    const result = await invokeQwen(context, SKILL_MARKDOWN);
+    if (result.status !== "parse_failure") {
+      return result;
+    }
+    console.error("invokeSkill: Qwen returned an unusable response, attempting Cloudflare fallback", { reason: result.reason });
+    qwenErr = new Error(`unusable_response: ${result.reason}`);
+  } catch (err) {
+    qwenErr = err instanceof Error ? err : new Error(String(err));
+    console.error("invokeSkill: primary provider (Qwen) failed, attempting Cloudflare fallback", { reason: qwenErr.message });
+  }
+
+  if (!process.env.CLOUDFLARE_ACCOUNT_ID || !process.env.CLOUDFLARE_API_TOKEN) {
+    console.error(
+      "invokeSkill: Qwen failed and no Cloudflare fallback is configured (CLOUDFLARE_ACCOUNT_ID/CLOUDFLARE_API_TOKEN not set), attempting Ox Alpha",
+      { reason: qwenErr.message },
+    );
+    return tryOxAlphaFallback(context, qwenErr, false);
+  }
+
+  let cloudflareErr: Error;
+  let cloudflareWasQuotaExceeded = false;
+  try {
+    const cfResult = await invokeCloudflare(context, SKILL_MARKDOWN);
+    if (cfResult.status !== "parse_failure") {
+      console.log("invokeSkill: Cloudflare fallback succeeded after Qwen failure", { status: cfResult.status });
+      return cfResult;
+    }
+    console.error("invokeSkill: Cloudflare fallback returned an unusable response, attempting Ox Alpha", { reason: cfResult.reason });
+    cloudflareErr = new Error(`unusable_response: ${cfResult.reason}`);
+  } catch (err) {
+    cloudflareWasQuotaExceeded = err instanceof CloudflareQuotaExceededError;
+    cloudflareErr = err instanceof Error ? err : new Error(String(err));
+    console.error("invokeSkill: Cloudflare fallback also failed after Qwen failure, attempting Ox Alpha", { reason: cloudflareErr.message });
+  }
+
+  return tryOxAlphaFallback(context, cloudflareErr, cloudflareWasQuotaExceeded);
+}
+
+/**
+ * AI_PROVIDER, when explicitly set, selects one named provider as primary —
+ * "qwen", "cloudflare", "anthropic", "gemini", or "oxalpha" — each with its
+ * own separate, pre-existing fallback behavior below. When UNSET (the
+ * default, and the normal production configuration), invokeDefaultChain
+ * above runs instead: Qwen -> Cloudflare -> Ox Alpha, with a returned
+ * parse_failure also fallback-worthy, not just a thrown error. Every
+ * provider implements the identical Skill contract (same SKILL_MARKDOWN,
+ * same extraction prompt, same SkillDecision validation) — swapping which
+ * one is used is only ever this one env var, never a code change.
  *
- * - Primary = Qwen (the default): ANY failure — quota, rate limit, or any
- *   other API error — falls back to Cloudflare immediately with the
- *   identical context and Skill (see tryCloudflareFallbackForQwen above).
- * - Primary = Claude: ANY failure falls back to Gemini immediately with the
- *   identical context and Skill. Gemini is a free-tier-only fallback (see
- *   gemini.ts): its own 429s are never retried, and a Gemini failure here is
- *   always a plain terminal parse_failure — never a scheduled retry, since
- *   there's no fixed "available again at" time to reschedule against the way
- *   Cloudflare has.
- * - Primary = Cloudflare: unchanged from before Qwen/Gemini existed — only
+ * The named-selector fallback paths below are unchanged and kept separate
+ * because their retry semantics genuinely differ from the default policy:
+ *
+ * - AI_PROVIDER=qwen: ANY failure — quota, rate limit, or any other API
+ *   error — falls back to Cloudflare immediately with the identical context
+ *   and Skill (see tryCloudflareFallbackForQwen above). Unlike the default
+ *   policy, a returned parse_failure here is terminal, not fallback-worthy —
+ *   unchanged from before Ox Alpha existed.
+ * - AI_PROVIDER=anthropic (or unrecognized/garbage): ANY failure falls back
+ *   to Gemini immediately with the identical context and Skill. Gemini is a
+ *   free-tier-only fallback (see gemini.ts): its own 429s are never retried,
+ *   and a Gemini failure here is always a plain terminal parse_failure —
+ *   never a scheduled retry, since there's no fixed "available again at"
+ *   time to reschedule against the way Cloudflare has.
+ * - AI_PROVIDER=cloudflare: unchanged from before Qwen/Gemini existed — only
  *   its own specific CloudflareQuotaExceededError triggers a fallback (to
  *   Anthropic), and that failure path can reschedule the message for after
  *   Cloudflare's known daily reset. Any other Cloudflare error still
@@ -174,10 +282,18 @@ async function tryCloudflareFallbackForQwen(
 export async function invokeSkill(
   context: SkillInvocationContext,
 ): Promise<SkillInvocationResult> {
-  const providerName = process.env.AI_PROVIDER ?? "qwen";
-  // "qwen" is a real key in PROVIDERS, so this fallback only ever matters for
-  // an unrecognized/garbage AI_PROVIDER value — kept as invokeAnthropic
-  // (unchanged from before Qwen existed) so that case still pairs correctly
+  const providerName = process.env.AI_PROVIDER;
+
+  // Default routing policy: only when AI_PROVIDER is genuinely unset. Every
+  // new invokeSkill() call is a fresh, stateless invocation with no
+  // persisted "current provider" state, so it always starts at Qwen again
+  // regardless of what a previous call fell back to.
+  if (providerName === undefined) {
+    return invokeDefaultChain(context);
+  }
+
+  // Unrecognized/garbage AI_PROVIDER falls back to invokeAnthropic (unchanged
+  // from before Ox Alpha/Qwen existed) so that case still pairs correctly
   // with the "!== cloudflare" branch below, which routes to Gemini.
   const provider = PROVIDERS[providerName] ?? invokeAnthropic;
 
