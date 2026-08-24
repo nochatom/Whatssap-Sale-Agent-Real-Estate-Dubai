@@ -14,10 +14,37 @@ import type { SkillProvider } from "./types";
 // upstream backend, regardless of whether the union is anyOf/const or a
 // flattened Gemini-style variant — reproduced 4/4 times. The looser
 // `json_object` mode (valid-JSON-only, not grammar-constrained to a schema)
-// was confirmed to handle nested output correctly, so this provider uses that
-// instead, with the target shape spelled out in the extraction prompt text
-// itself rather than passed as a schema.
+// handles nested output correctly, so this provider uses that instead, with
+// the target shape spelled out in the extraction prompt text itself rather
+// than passed as a schema.
+//
+// Confirmed live (2026-08-24): non-streaming requests against this backend
+// are unreliable for both calls this provider makes — the same
+// system+user extraction request that failed 100% of the time non-streaming
+// succeeded 8/8 with `stream: true` (0 failures across 3 different realistic
+// prompts). The prose call has a second, independent issue on top of that:
+// this is a reasoning model, and its internal `reasoning_content` can
+// consume the entire token budget before any real answer content streams
+// out, returning empty even on a call that otherwise "succeeds." Both calls
+// stream for reliability; the prose call additionally uses a raised
+// max_tokens (see PROSE_MAX_TOKENS below) sized from real measurements, not
+// guessed.
 const MODEL = "qwen/qwen3.8-max-free";
+
+// 2048 already proved reliable for the extraction call (8/8 in testing) —
+// left unchanged, no reason to raise it.
+const EXTRACTION_MAX_TOKENS = 2048;
+
+// Empirically sized, not guessed: tested 3072 (1/3 usable, avg 33s), 4096
+// (2/3 usable, avg 39s), and 6144 (3/3 usable, avg 72s) against real Skill
+// conversations. 6144 was the only value that reliably left enough budget
+// for actual answer content after this reasoning model's internal
+// `reasoning_content` — below it, a real fraction of calls "succeed" (no
+// thrown error) but return zero usable characters, indistinguishable from a
+// failure downstream. The latency cost is real (roughly 2x the smaller
+// values) and accepted deliberately: usable content beats a faster empty
+// response that just falls back to Cloudflare anyway.
+const PROSE_MAX_TOKENS = 6144;
 
 /**
  * QWEN_API_KEY is the only credential this provider needs — TokenRouter uses
@@ -68,6 +95,27 @@ Set clientAnalysis.milestone to the exact value on the Milestone line in the sou
 text. If that line is missing entirely, set it to "none" — never omit it.`;
 
 /**
+ * Accumulates a chat-completion stream into a single string, same as reading
+ * `.choices[0].message.content` off a non-streaming response would give —
+ * downstream code (parseExtractionOutput, the SkillDecision contract) never
+ * knows or cares that the call was streamed. Any error thrown while
+ * iterating (a mid-stream failure, same as an error thrown before any chunk
+ * arrives) propagates uncaught, exactly like a non-streaming call's error
+ * already did — invoke.ts's qwen-primary path treats any failure here as
+ * fallback-worthy, so no special-casing is needed.
+ */
+async function streamToText(
+  stream: AsyncIterable<{ choices: Array<{ delta?: { content?: string | null } }> }>,
+): Promise<string> {
+  let text = "";
+  for await (const chunk of stream) {
+    const delta = chunk.choices[0]?.delta?.content;
+    if (delta) text += delta;
+  }
+  return text;
+}
+
+/**
  * Two-call shape (prose, then a separate extraction call) — same pattern as
  * anthropic.ts and gemini.ts, chosen over Cloudflare's single-call approach
  * specifically because that approach depends on strict-schema structured
@@ -81,37 +129,48 @@ export const invokeQwen: SkillProvider = async (context, skillMarkdown) => {
   const openai = client();
 
   const proseStartedAt = Date.now();
-  const proseResponse = await openai.chat.completions.create({
+  const proseStream = await openai.chat.completions.create({
     model: MODEL,
-    max_tokens: 2048,
+    max_tokens: PROSE_MAX_TOKENS,
+    stream: true,
     messages: [
       { role: "system", content: skillMarkdown },
       { role: "user", content: buildSkillInput(context) },
     ],
   });
+  const prose = await streamToText(proseStream);
   const proseCallMs = Date.now() - proseStartedAt;
 
-  const prose = proseResponse.choices[0]?.message?.content ?? "";
+  // Thrown, not returned: empty content is a genuine Qwen failure (this
+  // reasoning model's internal reasoning_content can consume the whole
+  // token budget and leave nothing for the real answer, even on an
+  // otherwise-successful call) — it must reach invoke.ts's catch block for
+  // the Cloudflare fallback to fire, the same as a network/HTTP error does.
+  // A *returned* parse_failure here would dead-end with no reply at all,
+  // since invokeSkill() only falls back on a thrown error.
   if (!prose) {
-    return { status: "parse_failure", reason: "Skill call returned no content", rawOutput: "" };
+    throw new Error(`Qwen prose call returned no usable content after ${proseCallMs}ms (reasoning likely consumed the token budget)`);
   }
 
   const extractionStartedAt = Date.now();
-  const extractionResponse = await openai.chat.completions.create({
+  const extractionStream = await openai.chat.completions.create({
     model: MODEL,
-    max_tokens: 2048,
+    max_tokens: EXTRACTION_MAX_TOKENS,
+    stream: true,
     messages: [
       { role: "system", content: EXTRACTION_SYSTEM_PROMPT + QWEN_SHAPE_INSTRUCTIONS },
       { role: "user", content: prose },
     ],
     response_format: { type: "json_object" },
   });
+  const extractionText = await streamToText(extractionStream);
   const extractionCallMs = Date.now() - extractionStartedAt;
   const timingsMs = { proseCallMs, extractionCallMs, totalMs: proseCallMs + extractionCallMs };
 
-  const extractionText = extractionResponse.choices[0]?.message?.content ?? "";
+  // Same reasoning as the prose call above: thrown, not returned, so this
+  // genuine failure reaches the Cloudflare fallback instead of dead-ending.
   if (!extractionText) {
-    return { status: "parse_failure", reason: "extraction call returned no content", rawOutput: prose, timingsMs };
+    throw new Error(`Qwen extraction call returned no usable content after ${extractionCallMs}ms`);
   }
 
   const parsed = parseExtractionOutput(extractionText);
