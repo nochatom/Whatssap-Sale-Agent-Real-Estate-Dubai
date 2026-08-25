@@ -3,10 +3,16 @@ import { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { invokeSkill } from "@/skill/invoke";
+import { fetchReachedMilestones } from "@/skill/milestones";
 import type { SkillDecision, SkillInputMessage, SkillInvocationContext } from "@/skill/types";
 import { buildFollowUpIdempotencyKey } from "@/whatsapp/idempotency";
 import { resolveSender } from "@trigger/resolve-sender";
 import { sendOutboundTask } from "@trigger/send-outbound";
+
+// Fixed, not configurable per campaign (unlike Campaign.followUpDelayMinutes,
+// which drives the separate AI-decision-triggered follow-up below) — the
+// user specified an exact 48-hour cadence for this sequence.
+const CAMPAIGN_FOLLOWUP_DELAY_HOURS = 48;
 
 export interface ScheduleFollowUpPayload {
   conversationId: string;
@@ -60,6 +66,75 @@ export async function scheduleFollowUp(followUpId: string): Promise<{ triggerRun
 
   return { triggerRunId: handle.id };
 }
+
+export interface StartCampaignFollowUpSequenceParams {
+  conversationId: string;
+  leadId: string;
+  campaignId: string;
+}
+
+/**
+ * Creates and schedules one step of the fixed, campaign-level 2-step follow-
+ * up sequence (Follow-up #1, then a Final Follow-up 48h after that) —
+ * distinct from maybeScheduleFollowUp below, which creates the OTHER kind of
+ * FollowUp row (sequenceStep left null) only when the Skill itself
+ * explicitly asks for one. This one is unconditional: called once right
+ * after a campaign's template-opener send (see trigger/send-outbound.ts) for
+ * step 1, and again from within runScheduledFollowUp itself, after step 1
+ * successfully sends, for step 2. Always a fixed 48h out — never sourced
+ * from Campaign.followUpDelayMinutes, which is a different, unrelated
+ * setting for the other follow-up mechanism.
+ */
+export async function startCampaignFollowUpSequence(
+  params: StartCampaignFollowUpSequenceParams,
+  sequenceStep: 1 | 2 = 1,
+): Promise<{ followUpId: string; scheduledFor: Date }> {
+  const scheduledFor = new Date(Date.now() + CAMPAIGN_FOLLOWUP_DELAY_HOURS * 60 * 60_000);
+
+  const followUp = await prisma.followUp.create({
+    data: {
+      conversationId: params.conversationId,
+      leadId: params.leadId,
+      scheduledFor,
+      reason: `campaign follow-up sequence: step ${sequenceStep}`,
+      sequenceStep,
+    },
+  });
+
+  await scheduleFollowUp(followUp.id);
+
+  logger.log("schedule-followup: campaign follow-up sequence step scheduled", {
+    followUpId: followUp.id,
+    campaignId: params.campaignId,
+    sequenceStep,
+    scheduledFor,
+  });
+
+  return { followUpId: followUp.id, scheduledFor };
+}
+
+export interface StartCampaignFollowUpSequenceTaskPayload extends StartCampaignFollowUpSequenceParams {
+  sequenceStep?: 1 | 2;
+}
+
+/**
+ * Queue: concurrencyLimit 10. Exists solely so trigger/send-outbound.ts can
+ * start the campaign follow-up sequence WITHOUT importing this file
+ * directly — this file already imports sendOutboundTask FROM send-outbound.ts
+ * (to actually send a follow-up's message), so a direct import in the other
+ * direction would be circular. send-outbound.ts triggers this task by its
+ * string id (tasks.trigger) instead of importing the object. Called as a
+ * plain function (startCampaignFollowUpSequence, not this task) from within
+ * this same file when scheduling step 2 after step 1 sends — no cycle there.
+ */
+export const startCampaignFollowUpSequenceTask = task({
+  id: "start-campaign-followup-sequence",
+  queue: { concurrencyLimit: 10 },
+  retry: { maxAttempts: 3 },
+  run: async (payload: StartCampaignFollowUpSequenceTaskPayload) => {
+    return startCampaignFollowUpSequence(payload, payload.sequenceStep ?? 1);
+  },
+});
 
 export interface MaybeScheduleFollowUpParams {
   conversationId: string;
@@ -190,6 +265,37 @@ export async function runScheduledFollowUp(
     return { actioned: false, reason: "customer replied since scheduling" };
   }
 
+  // Two additional stop conditions that ONLY apply to the fixed campaign
+  // sequence (sequenceStep set) — the older AI-decision-triggered follow-up
+  // (sequenceStep null) is untouched by either check, unchanged from its
+  // original behavior above and below.
+  let campaignFollowUpStage: "first" | "final" | undefined;
+  if (followUp.sequenceStep != null) {
+    const reachedMilestones = await fetchReachedMilestones(conversation.id);
+    if (reachedMilestones.length > 0) {
+      await prisma.followUp.update({ where: { id: followUp.id }, data: { status: "CANCELLED" } });
+      logger.log("schedule-followup: cancelled, conversation reached a protected milestone", {
+        followUpId: followUp.id,
+        reachedMilestones,
+      });
+      return { actioned: false, reason: "conversation reached a protected milestone" };
+    }
+
+    const campaign = conversation.campaignId
+      ? await prisma.campaign.findUnique({ where: { id: conversation.campaignId } })
+      : null;
+    if (!campaign?.campaignFollowUpEnabled) {
+      await prisma.followUp.update({ where: { id: followUp.id }, data: { status: "CANCELLED" } });
+      logger.log("schedule-followup: cancelled, campaign follow-up is no longer enabled", {
+        followUpId: followUp.id,
+        campaignId: conversation.campaignId,
+      });
+      return { actioned: false, reason: "campaign follow-up is no longer enabled" };
+    }
+
+    campaignFollowUpStage = followUp.sequenceStep === 1 ? "first" : "final";
+  }
+
   const history = await prisma.message.findMany({
     where: { conversationId: payload.conversationId },
     orderBy: { createdAt: "asc" },
@@ -206,6 +312,7 @@ export async function runScheduledFollowUp(
     behaviorState: "F",
     messages: skillMessages,
     lead: { phoneE164: conversation.lead.phoneE164, knownFacts: {} },
+    ...(campaignFollowUpStage ? { campaignFollowUp: { stage: campaignFollowUpStage } } : {}),
   };
 
   const result = await invokeSkill(context);
@@ -263,6 +370,22 @@ export async function runScheduledFollowUp(
     },
     { concurrencyKey: sender.senderPhoneNumberId },
   );
+
+  // Advance the fixed campaign sequence BEFORE marking this FollowUp SENT —
+  // if scheduling the next step throws, a Trigger.dev retry should re-enter
+  // this whole function (status still PENDING) and try again, rather than
+  // silently getting stuck with no Final Follow-up ever scheduled.
+  // Re-triggering send-outbound again on that retry is already safe: its
+  // idempotency key is unchanged (same followUp.id), so a duplicate trigger
+  // is a no-op at the database layer — the same guarantee this file already
+  // relies on elsewhere. Exactly one further step: after step 1 sends,
+  // schedule step 2; after step 2 sends, the sequence is over for this lead.
+  if (followUp.sequenceStep === 1 && conversation.campaignId) {
+    await startCampaignFollowUpSequence(
+      { conversationId: conversation.id, leadId: payload.leadId, campaignId: conversation.campaignId },
+      2,
+    );
+  }
 
   await prisma.followUp.update({ where: { id: followUp.id }, data: { status: "SENT" } });
 

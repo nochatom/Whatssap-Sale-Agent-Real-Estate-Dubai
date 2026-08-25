@@ -69,7 +69,13 @@ model Campaign {
   senderPhoneNumberId  String
   /// Configurable follow-up delay in minutes. Null means no follow-up can be
   /// scheduled for this campaign — never defaulted to a guessed interval.
+  /// Drives the older, AI-decision-triggered single-follow-up path only —
+  /// unrelated to campaignFollowUpEnabled below.
   followUpDelayMinutes Int?
+  /// Master toggle for the fixed 2-stage (48h/48h) campaign follow-up
+  /// sequence — OFF by default. Independent of followUpDelayMinutes above,
+  /// which drives a different, AI-decision-triggered follow-up mechanism.
+  campaignFollowUpEnabled Boolean     @default(false)
   createdAt            DateTime       @default(now())
   updatedAt            DateTime       @updatedAt
 
@@ -192,6 +198,9 @@ model FollowUp {
   status            FollowUpStatus @default(PENDING)
   triggerAiDecisionId String?
   triggerRunId      String?
+  /// Null = the existing AI-decision-triggered follow-up (do_not_follow_up_yet).
+  /// 1 = "Follow-up #1" of the fixed campaign sequence, 2 = its Final Follow-up.
+  sequenceStep      Int?
   createdAt         DateTime       @default(now())
 
   conversation    Conversation @relation(fields: [conversationId], references: [id])

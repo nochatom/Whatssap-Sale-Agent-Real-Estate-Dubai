@@ -33,6 +33,18 @@ vi.mock("@/whatsapp/transport", () => ({
   sendTemplateMessage: (...args: unknown[]) => sendTemplateMessageMock(...args),
 }));
 
+// Only tasks.trigger is mocked (a real cross-task API call, unusable in a
+// unit test) — logger/task/everything else passes through to the real SDK,
+// same as it already does unmocked elsewhere in this file.
+const tasksTriggerMock = vi.fn();
+vi.mock("@trigger.dev/sdk/v3", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@trigger.dev/sdk/v3")>();
+  return {
+    ...actual,
+    tasks: { ...actual.tasks, trigger: (...args: unknown[]) => tasksTriggerMock(...args) },
+  };
+});
+
 const { sendOutbound } = await import("@trigger/send-outbound");
 
 const BASE_PAYLOAD = {
@@ -76,6 +88,7 @@ describe("sendOutbound", () => {
     messageCreate.mockReset().mockResolvedValue({ id: "msg_out_1" });
     sendMessageMock.mockReset();
     sendTemplateMessageMock.mockReset();
+    tasksTriggerMock.mockReset().mockResolvedValue({ id: "run_followup_seq" });
     mockPassingGate();
     process.env.WHATSAPP_ACCESS_TOKEN = "test-token";
     process.env.WHATSAPP_TEMPLATE_LANGUAGE = "en_US";
@@ -231,6 +244,70 @@ describe("sendOutbound", () => {
         sendOutbound({ ...TEMPLATE_PAYLOAD, campaignId: undefined }),
       ).rejects.toThrow(/no organic template/);
       expect(leadFindUniqueOrThrow).not.toHaveBeenCalled();
+    });
+
+    describe("campaign follow-up sequence hook", () => {
+      it("starts the sequence (by task id, decoupled) when the campaign has follow-up enabled", async () => {
+        campaignFindUniqueOrThrow.mockResolvedValue({
+          id: "camp_1",
+          status: "ACTIVE",
+          dailyBudgetPerNumber: 100,
+          templateName: "property_video_intro",
+          templateStatus: "APPROVED",
+          campaignFollowUpEnabled: true,
+        });
+        sendTemplateMessageMock.mockResolvedValue({ waMessageId: "wamid.TPL1" });
+
+        await sendOutbound(TEMPLATE_PAYLOAD);
+
+        expect(tasksTriggerMock).toHaveBeenCalledWith("start-campaign-followup-sequence", {
+          conversationId: "conv_1",
+          leadId: "lead_1",
+          campaignId: "camp_1",
+        });
+      });
+
+      it("does NOT start the sequence when the campaign does not have follow-up enabled", async () => {
+        // Default campaign mock (campaignFollowUpEnabled left unset) from the outer beforeEach.
+        sendTemplateMessageMock.mockResolvedValue({ waMessageId: "wamid.TPL1" });
+
+        await sendOutbound(TEMPLATE_PAYLOAD);
+
+        expect(tasksTriggerMock).not.toHaveBeenCalled();
+      });
+
+      it("does NOT start the sequence for a non-template (reply) send, even if the campaign has follow-up enabled — normal AI replies are unaffected", async () => {
+        campaignFindUniqueOrThrow.mockResolvedValue({
+          id: "camp_1",
+          status: "ACTIVE",
+          dailyBudgetPerNumber: 100,
+          templateName: "property_video_intro",
+          templateStatus: "APPROVED",
+          campaignFollowUpEnabled: true,
+        });
+        sendMessageMock.mockResolvedValue({ waMessageId: "wamid.REPLY1" });
+
+        await sendOutbound(BASE_PAYLOAD);
+
+        expect(tasksTriggerMock).not.toHaveBeenCalled();
+      });
+
+      it("does not affect the successful send result if starting the sequence fails", async () => {
+        campaignFindUniqueOrThrow.mockResolvedValue({
+          id: "camp_1",
+          status: "ACTIVE",
+          dailyBudgetPerNumber: 100,
+          templateName: "property_video_intro",
+          templateStatus: "APPROVED",
+          campaignFollowUpEnabled: true,
+        });
+        sendTemplateMessageMock.mockResolvedValue({ waMessageId: "wamid.TPL1" });
+        tasksTriggerMock.mockRejectedValue(new Error("trigger.dev unavailable"));
+
+        const result = await sendOutbound(TEMPLATE_PAYLOAD);
+
+        expect(result).toEqual({ sent: true, waMessageId: "wamid.TPL1", messageId: "msg_out_1" });
+      });
     });
   });
 

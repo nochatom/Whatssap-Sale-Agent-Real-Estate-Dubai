@@ -3,7 +3,8 @@ import { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { invokeSkill, isRetryableProviderUnavailable, nextCloudflareQuotaResetAt } from "@/skill/invoke";
-import type { Milestone, SkillInputMessage, SkillInvocationContext } from "@/skill/types";
+import { extractMilestone, fetchReachedMilestones } from "@/skill/milestones";
+import type { SkillInputMessage, SkillInvocationContext } from "@/skill/types";
 import { classifyBehaviorState } from "@/whatsapp/behavior-state";
 import { buildReplyIdempotencyKey } from "@/whatsapp/idempotency";
 import { resolveSender } from "@trigger/resolve-sender";
@@ -18,56 +19,7 @@ export interface SendAiReplyPayload {
   triggeringWaMessageId: string;
 }
 
-/**
- * AiDecision.parsedDecision is a Prisma Json column (untyped at the DB
- * layer) — this reads clientAnalysis.milestone back out defensively, never
- * throwing on a null, non-object, or older-shape value (e.g. a decision
- * persisted before the milestone field existed).
- */
-function extractMilestone(parsedDecision: Prisma.JsonValue | null | undefined): string | undefined {
-  if (typeof parsedDecision !== "object" || parsedDecision === null || Array.isArray(parsedDecision)) {
-    return undefined;
-  }
-  const clientAnalysis = (parsedDecision as { clientAnalysis?: unknown }).clientAnalysis;
-  if (typeof clientAnalysis !== "object" || clientAnalysis === null) {
-    return undefined;
-  }
-  const milestone = (clientAnalysis as { milestone?: unknown }).milestone;
-  return typeof milestone === "string" ? milestone : undefined;
-}
-
 const URL_SHAPE = /https?:\/\/\S+/i;
-
-const VALID_MILESTONES: ReadonlySet<string> = new Set<Milestone>([
-  "payment_intent",
-  "payment_confirmed",
-  "payment_proof_received",
-  "ready_to_start",
-]);
-
-/**
- * Non-"none" milestones already reached by a PRIOR turn in this conversation
- * (oldest first, deduped) — fed into SkillInvocationContext.reachedMilestones
- * so build-prompt.ts can state it as a deterministic fact instead of leaving
- * the model to infer "was this workflow stage already handled?" from a long
- * transcript. See types.ts's SkillInvocationContext.reachedMilestones for
- * why this must come from persisted history, not model re-inference.
- */
-async function fetchReachedMilestones(conversationId: string): Promise<Milestone[]> {
-  const priorDecisions = await prisma.aiDecision.findMany({
-    where: { conversationId },
-    orderBy: { createdAt: "asc" },
-    select: { parsedDecision: true },
-  });
-  const reached: Milestone[] = [];
-  for (const d of priorDecisions) {
-    const m = extractMilestone(d.parsedDecision);
-    if (m && VALID_MILESTONES.has(m) && !reached.includes(m as Milestone)) {
-      reached.push(m as Milestone);
-    }
-  }
-  return reached;
-}
 
 /**
  * Payment/Assets status for the ready_to_start Telegram alert — computed

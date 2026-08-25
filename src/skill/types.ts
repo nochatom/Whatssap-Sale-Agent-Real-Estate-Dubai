@@ -89,6 +89,16 @@ export interface SkillInvocationContext {
    * construct a context by hand (no DB access) need no changes.
    */
   reachedMilestones?: Milestone[];
+  /**
+   * Set only when this call is an automated campaign follow-up (see
+   * trigger/schedule-followup.ts's sequenceStep-branched path) — never set
+   * for a normal inbound-message reply. "first" = Follow-up #1 (48h after
+   * the campaign message, no reply yet); "final" = the last automated
+   * follow-up in the sequence (96h after the campaign message). Purely
+   * additive context for build-prompt.ts to state deterministically, same
+   * as reachedMilestones above — not a different Skill or prompt.
+   */
+  campaignFollowUp?: { stage: "first" | "final" };
 }
 
 /**

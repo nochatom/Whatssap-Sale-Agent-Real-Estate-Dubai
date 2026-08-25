@@ -7,6 +7,7 @@ const conversationFindUniqueOrThrow = vi.fn();
 const messageFindMany = vi.fn();
 const aiDecisionCreate = vi.fn();
 const campaignFindUniqueOrThrow = vi.fn();
+const campaignFindUnique = vi.fn();
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
@@ -20,7 +21,10 @@ vi.mock("@/lib/prisma", () => ({
     },
     message: { findMany: (...args: unknown[]) => messageFindMany(...args) },
     aiDecision: { create: (...args: unknown[]) => aiDecisionCreate(...args) },
-    campaign: { findUniqueOrThrow: (...args: unknown[]) => campaignFindUniqueOrThrow(...args) },
+    campaign: {
+      findUniqueOrThrow: (...args: unknown[]) => campaignFindUniqueOrThrow(...args),
+      findUnique: (...args: unknown[]) => campaignFindUnique(...args),
+    },
   },
 }));
 
@@ -29,13 +33,23 @@ vi.mock("@/skill/invoke", () => ({
   invokeSkill: (...args: unknown[]) => invokeSkillMock(...args),
 }));
 
+const fetchReachedMilestonesMock = vi.fn();
+vi.mock("@/skill/milestones", () => ({
+  fetchReachedMilestones: (...args: unknown[]) => fetchReachedMilestonesMock(...args),
+}));
+
 const sendOutboundTrigger = vi.fn();
 vi.mock("@trigger/send-outbound", () => ({
   sendOutboundTask: { trigger: (...args: unknown[]) => sendOutboundTrigger(...args) },
 }));
 
-const { runScheduledFollowUp, scheduleFollowUp, scheduleFollowUpTask, maybeScheduleFollowUp } =
-  await import("@trigger/schedule-followup");
+const {
+  runScheduledFollowUp,
+  scheduleFollowUp,
+  scheduleFollowUpTask,
+  maybeScheduleFollowUp,
+  startCampaignFollowUpSequence,
+} = await import("@trigger/schedule-followup");
 
 const CREATED_AT = new Date("2026-08-01T10:00:00Z");
 const PAYLOAD = { conversationId: "conv_1", leadId: "lead_1", followUpId: "fu_1" };
@@ -89,6 +103,8 @@ describe("runScheduledFollowUp", () => {
       id: "camp_1",
       senderPhoneNumberId: "999888777",
     });
+    campaignFindUnique.mockReset();
+    fetchReachedMilestonesMock.mockReset();
     invokeSkillMock.mockReset();
     sendOutboundTrigger.mockReset().mockResolvedValue({ id: "run_1" });
   });
@@ -423,5 +439,239 @@ describe("maybeScheduleFollowUp", () => {
     });
 
     triggerSpy.mockRestore();
+  });
+});
+
+describe("startCampaignFollowUpSequence", () => {
+  beforeEach(() => {
+    followUpCreate.mockReset().mockResolvedValue({ id: "fu_seq1" });
+    followUpFindUniqueOrThrow.mockReset().mockResolvedValue({
+      id: "fu_seq1",
+      conversationId: "conv_1",
+      leadId: "lead_1",
+      status: "PENDING",
+      scheduledFor: new Date(Date.now() + 48 * 60 * 60_000),
+      createdAt: new Date(),
+    });
+    followUpUpdate.mockReset().mockResolvedValue({});
+  });
+
+  it("creates a FollowUp scheduledFor now + 48h with sequenceStep set, and schedules it", async () => {
+    const triggerSpy = vi
+      .spyOn(scheduleFollowUpTask, "trigger")
+      .mockResolvedValue({ id: "run_seq1" } as never);
+    const before = Date.now();
+
+    const result = await startCampaignFollowUpSequence(
+      { conversationId: "conv_1", leadId: "lead_1", campaignId: "camp_1" },
+      1,
+    );
+
+    const deltaMs = result.scheduledFor.getTime() - before;
+    expect(deltaMs).toBeGreaterThan(47.9 * 60 * 60_000);
+    expect(deltaMs).toBeLessThan(48.1 * 60 * 60_000);
+
+    const [createArgs] = followUpCreate.mock.calls[0];
+    expect(createArgs.data).toMatchObject({
+      conversationId: "conv_1",
+      leadId: "lead_1",
+      sequenceStep: 1,
+      reason: "campaign follow-up sequence: step 1",
+    });
+    expect(triggerSpy).toHaveBeenCalledWith(
+      { conversationId: "conv_1", leadId: "lead_1", followUpId: "fu_seq1" },
+      expect.objectContaining({ concurrencyKey: "conv_1" }),
+    );
+
+    triggerSpy.mockRestore();
+  });
+
+  it("defaults to sequenceStep 1 when not specified", async () => {
+    const triggerSpy = vi.spyOn(scheduleFollowUpTask, "trigger").mockResolvedValue({ id: "run_seq1" } as never);
+
+    await startCampaignFollowUpSequence({ conversationId: "conv_1", leadId: "lead_1", campaignId: "camp_1" });
+
+    const [createArgs] = followUpCreate.mock.calls[0];
+    expect(createArgs.data.sequenceStep).toBe(1);
+
+    triggerSpy.mockRestore();
+  });
+});
+
+describe("runScheduledFollowUp — campaign follow-up sequence (sequenceStep set)", () => {
+  const SEQ_PAYLOAD = { conversationId: "conv_1", leadId: "lead_1", followUpId: "fu_seq1" };
+
+  beforeEach(() => {
+    followUpFindUniqueOrThrow.mockReset().mockResolvedValue({
+      id: "fu_seq1",
+      status: "PENDING",
+      createdAt: CREATED_AT,
+      sequenceStep: 1,
+    });
+    followUpUpdate.mockReset().mockResolvedValue({});
+    followUpCreate.mockReset().mockResolvedValue({ id: "fu_seq2" });
+    conversationFindUniqueOrThrow.mockReset().mockResolvedValue({
+      id: "conv_1",
+      campaignId: "camp_1",
+      lastInboundAt: new Date("2026-08-01T09:00:00Z"), // before the follow-up was created
+      lead: { id: "lead_1", phoneE164: "+15551234567" },
+    });
+    messageFindMany.mockReset().mockResolvedValue([]);
+    aiDecisionCreate.mockReset().mockResolvedValue({ id: "decision_1" });
+    fetchReachedMilestonesMock.mockReset().mockResolvedValue([]);
+    campaignFindUnique.mockReset().mockResolvedValue({
+      id: "camp_1",
+      campaignFollowUpEnabled: true,
+      senderPhoneNumberId: "999888777",
+    });
+    campaignFindUniqueOrThrow.mockReset().mockResolvedValue({
+      id: "camp_1",
+      senderPhoneNumberId: "999888777",
+    });
+    invokeSkillMock.mockReset().mockResolvedValue(successDecision("reply"));
+    sendOutboundTrigger.mockReset().mockResolvedValue({ id: "run_1" });
+  });
+
+  it("passes campaignFollowUp: { stage: 'first' } to the Skill for sequenceStep 1", async () => {
+    await runScheduledFollowUp(SEQ_PAYLOAD);
+
+    const [context] = invokeSkillMock.mock.calls[0];
+    expect(context.campaignFollowUp).toEqual({ stage: "first" });
+    expect(context.behaviorState).toBe("F");
+  });
+
+  it("passes campaignFollowUp: { stage: 'final' } to the Skill for sequenceStep 2", async () => {
+    followUpFindUniqueOrThrow.mockResolvedValue({
+      id: "fu_seq2",
+      status: "PENDING",
+      createdAt: CREATED_AT,
+      sequenceStep: 2,
+    });
+
+    await runScheduledFollowUp({ ...SEQ_PAYLOAD, followUpId: "fu_seq2" });
+
+    const [context] = invokeSkillMock.mock.calls[0];
+    expect(context.campaignFollowUp).toEqual({ stage: "final" });
+  });
+
+  it("does NOT set campaignFollowUp on the older, non-sequence follow-up path", async () => {
+    followUpFindUniqueOrThrow.mockResolvedValue({ id: "fu_1", status: "PENDING", createdAt: CREATED_AT });
+
+    await runScheduledFollowUp(PAYLOAD);
+
+    const [context] = invokeSkillMock.mock.calls[0];
+    expect(context.campaignFollowUp).toBeUndefined();
+    // The old path's own campaign lookup is findUniqueOrThrow (via resolveSender), never the new findUnique check.
+    expect(campaignFindUnique).not.toHaveBeenCalled();
+  });
+
+  it("sends the follow-up and schedules step 2 after step 1 succeeds", async () => {
+    const result = await runScheduledFollowUp(SEQ_PAYLOAD);
+
+    expect(result).toEqual({ actioned: true });
+    expect(sendOutboundTrigger).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: "conv_1",
+        idempotencyKey: "out:followup:fu_seq1",
+        body: "Still there? Happy to answer anything.",
+      }),
+      expect.objectContaining({ concurrencyKey: "999888777" }),
+    );
+    expect(followUpUpdate).toHaveBeenCalledWith({ where: { id: "fu_seq1" }, data: { status: "SENT" } });
+
+    // Step 2 was scheduled.
+    const [createArgs] = followUpCreate.mock.calls[0];
+    expect(createArgs.data).toMatchObject({ conversationId: "conv_1", leadId: "lead_1", sequenceStep: 2 });
+  });
+
+  it("does NOT schedule anything further after step 2 (Final Follow-up) sends", async () => {
+    followUpFindUniqueOrThrow.mockResolvedValue({
+      id: "fu_seq2",
+      status: "PENDING",
+      createdAt: CREATED_AT,
+      sequenceStep: 2,
+    });
+
+    const result = await runScheduledFollowUp({ ...SEQ_PAYLOAD, followUpId: "fu_seq2" });
+
+    expect(result).toEqual({ actioned: true });
+    expect(followUpCreate).not.toHaveBeenCalled();
+    expect(followUpUpdate).toHaveBeenCalledWith({ where: { id: "fu_seq2" }, data: { status: "SENT" } });
+  });
+
+  it("stops (cancels, no Skill call, no send) when the conversation reached a protected milestone", async () => {
+    fetchReachedMilestonesMock.mockResolvedValue(["payment_intent"]);
+
+    const result = await runScheduledFollowUp(SEQ_PAYLOAD);
+
+    expect(result).toEqual({ actioned: false, reason: "conversation reached a protected milestone" });
+    expect(invokeSkillMock).not.toHaveBeenCalled();
+    expect(sendOutboundTrigger).not.toHaveBeenCalled();
+    expect(followUpUpdate).toHaveBeenCalledWith({ where: { id: "fu_seq1" }, data: { status: "CANCELLED" } });
+  });
+
+  it("stops (cancels, no Skill call, no send) when the campaign no longer has follow-up enabled", async () => {
+    campaignFindUnique.mockResolvedValue({
+      id: "camp_1",
+      campaignFollowUpEnabled: false,
+      senderPhoneNumberId: "999888777",
+    });
+
+    const result = await runScheduledFollowUp(SEQ_PAYLOAD);
+
+    expect(result).toEqual({ actioned: false, reason: "campaign follow-up is no longer enabled" });
+    expect(invokeSkillMock).not.toHaveBeenCalled();
+    expect(sendOutboundTrigger).not.toHaveBeenCalled();
+  });
+
+  it("stops when the campaign can no longer be found", async () => {
+    campaignFindUnique.mockResolvedValue(null);
+
+    const result = await runScheduledFollowUp(SEQ_PAYLOAD);
+
+    expect(result).toEqual({ actioned: false, reason: "campaign follow-up is no longer enabled" });
+    expect(invokeSkillMock).not.toHaveBeenCalled();
+  });
+
+  it("still stops on a reply since scheduling, using the same shared guard as the older follow-up path", async () => {
+    conversationFindUniqueOrThrow.mockResolvedValue({
+      id: "conv_1",
+      campaignId: "camp_1",
+      lastInboundAt: new Date("2026-08-02T00:00:00Z"), // after CREATED_AT
+      lead: { id: "lead_1", phoneE164: "+15551234567" },
+    });
+
+    const result = await runScheduledFollowUp(SEQ_PAYLOAD);
+
+    expect(result).toEqual({ actioned: false, reason: "customer replied since scheduling" });
+    expect(invokeSkillMock).not.toHaveBeenCalled();
+    // Milestone/campaign-enabled checks never even run — the reply guard fires first, for either path.
+    expect(fetchReachedMilestonesMock).not.toHaveBeenCalled();
+  });
+
+  it("is retry-safe: no-ops without invoking the Skill or sending again once already SENT", async () => {
+    followUpFindUniqueOrThrow.mockResolvedValue({
+      id: "fu_seq1",
+      status: "SENT",
+      createdAt: CREATED_AT,
+      sequenceStep: 1,
+    });
+
+    const result = await runScheduledFollowUp(SEQ_PAYLOAD);
+
+    expect(result).toEqual({ actioned: false, reason: "follow-up already SENT" });
+    expect(invokeSkillMock).not.toHaveBeenCalled();
+    expect(sendOutboundTrigger).not.toHaveBeenCalled();
+    expect(followUpCreate).not.toHaveBeenCalled();
+  });
+
+  it("cancels without scheduling step 2 when the Skill declines to reply", async () => {
+    invokeSkillMock.mockResolvedValue(successDecision("do_not_reply_yet"));
+
+    const result = await runScheduledFollowUp(SEQ_PAYLOAD);
+
+    expect(result).toEqual({ actioned: false, reason: "Skill did not return a reply; not auto-rescheduling" });
+    expect(sendOutboundTrigger).not.toHaveBeenCalled();
+    expect(followUpCreate).not.toHaveBeenCalled();
   });
 });

@@ -308,6 +308,36 @@ function summarizeRepeatedReplies(messages: SkillInputMessage[]): string | null 
 }
 
 /**
+ * Additive context for an automated campaign follow-up call (see
+ * trigger/schedule-followup.ts's sequenceStep-branched path) — never set for
+ * a normal inbound-message reply. Same pattern as every other fact above:
+ * a deterministic, code-computed line telling the Skill what kind of turn
+ * this is, not a different prompt or personality. The Skill's own existing
+ * rules (pricing, tone, objection-handling, etc.) still apply unchanged;
+ * this only adds the specific constraints the user requested for each stage
+ * of the sequence.
+ */
+function summarizeCampaignFollowUp(campaignFollowUp: SkillInvocationContext["campaignFollowUp"]): string | null {
+  if (!campaignFollowUp) return null;
+
+  if (campaignFollowUp.stage === "first") {
+    return (
+      `[Automated follow-up context: 48 hours have passed with no reply since the campaign message was sent. ` +
+      `This is an automated first follow-up — keep it short and natural, and do not simply repeat the original ` +
+      `campaign message.]`
+    );
+  }
+
+  return (
+    `[Automated follow-up context: this is the FINAL automated follow-up in this sequence, sent after 96 hours ` +
+    `of silence. Emphasize the service's value — professional property marketing videos, helping attract buyers ` +
+    `or renters, 30-60 second videos, 24-hour delivery, unlimited revisions. Do not invent a discount, bonus, or ` +
+    `limited-time offer — use only confirmed pricing from references/payment-config.md if price comes up. No ` +
+    `further automated follow-up will be sent after this one.]`
+  );
+}
+
+/**
  * Builds the user-turn payload for the Skill call. The pasted conversation is
  * DATA per SKILL.md §2 (inert-input rule) — this only serializes it, it never
  * adds instructions the Skill wouldn't already carry in its own system prompt
@@ -347,6 +377,12 @@ export function buildSkillInput(context: SkillInvocationContext): string {
   if (repetitionCheck) {
     lines.push("");
     lines.push(repetitionCheck);
+  }
+
+  const campaignFollowUpCheck = summarizeCampaignFollowUp(context.campaignFollowUp);
+  if (campaignFollowUpCheck) {
+    lines.push("");
+    lines.push(campaignFollowUpCheck);
   }
 
   return lines.join("\n");

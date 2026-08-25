@@ -1,4 +1,4 @@
-import { logger, task } from "@trigger.dev/sdk/v3";
+import { logger, task, tasks, type AnyTask } from "@trigger.dev/sdk/v3";
 
 import { prisma } from "@/lib/prisma";
 import { runComplianceGate, type ComplianceFailure } from "@/compliance/checks";
@@ -236,6 +236,29 @@ export async function sendOutbound(payload: SendOutboundPayload): Promise<SendOu
       totalSendOutboundMs: Date.now() - taskStartedAt,
     },
   });
+
+  // A template send only ever happens for a campaign's opening message
+  // (validated above: isTemplate requires campaignId, and nothing else in
+  // this codebase sends a template). If that campaign has the fixed 2-stage
+  // follow-up sequence enabled, start it now. Triggered by string task id
+  // (not a direct import — see startCampaignFollowUpSequenceTask's own
+  // comment for why) and wrapped so a scheduling failure here can never
+  // affect the campaign send that already succeeded, matching the existing
+  // non-fatal pattern used for the Telegram notification in send-ai-reply.ts.
+  if (isTemplate && campaign?.campaignFollowUpEnabled) {
+    try {
+      await tasks.trigger<AnyTask>("start-campaign-followup-sequence", {
+        conversationId: payload.conversationId,
+        leadId: payload.leadId,
+        campaignId: campaign.id,
+      });
+    } catch (followUpErr) {
+      logger.error("send-outbound: failed to start campaign follow-up sequence (non-fatal)", {
+        campaignId: campaign.id,
+        reason: followUpErr instanceof Error ? followUpErr.message : String(followUpErr),
+      });
+    }
+  }
 
   return { sent: true, waMessageId: sendResult.waMessageId, messageId: message.id };
 }
