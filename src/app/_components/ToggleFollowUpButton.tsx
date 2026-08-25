@@ -48,7 +48,19 @@ export default function ToggleFollowUpButton({
       title={enabled ? "Disable follow-up" : "Enable follow-up"}
       style={{
         ...buttonStyle("outline", saving, true),
-        color: saving ? colors.mutedText : undefined,
+        // The base outline style's plain `ink` text reads as unstyled black
+        // text with no button affordance, and doesn't reserve enough width
+        // for this label — every other button here is icon-only or a single
+        // short word. whiteSpace/flexShrink keep the full two-word label on
+        // one line at its natural width instead of wrapping or getting
+        // compressed by the flex row it sits in; the accent color (same
+        // value as colors.primary, via the semantic "info" token so this
+        // doesn't read as a second hero CTA) gives it real visibility
+        // without inventing a new color.
+        whiteSpace: "nowrap",
+        flexShrink: 0,
+        color: saving ? colors.mutedText : colors.semanticInfo,
+        borderColor: saving ? undefined : colors.semanticInfo,
       }}
     >
       {enabled ? "Disable Follow-up" : "Enable Follow-up"}
