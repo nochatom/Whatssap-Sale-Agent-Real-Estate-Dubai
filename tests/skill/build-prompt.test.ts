@@ -325,6 +325,224 @@ describe("buildSkillInput — repetition alert (repeated outbound replies)", () 
   });
 });
 
+describe("buildSkillInput — fresh-turn check (low-content latest message)", () => {
+  it("flags a bare 'Hey' as low-content when an old question is still open", () => {
+    const input = buildSkillInput(
+      contextWith([
+        msg("outbound", "What kind of property is the new video for? Is it a new listing or an existing one?"),
+        msg("inbound", "Hey"),
+      ]),
+    );
+    expect(input).toContain("Fresh-turn check");
+    expect(input).toContain('"Hey"');
+    expect(input).toContain("does NOT answer or advance any earlier open question");
+  });
+
+  it("flags 'Hi', 'Hello', 'Hey how are you', and 'Hey, how are you?' the same way", () => {
+    for (const greeting of ["Hi", "Hello", "Hey how are you", "Hey, how are you?"]) {
+      const input = buildSkillInput(contextWith([msg("inbound", greeting)]));
+      expect(input, `expected "${greeting}" to be flagged`).toContain("Fresh-turn check");
+    }
+  });
+
+  it("does NOT flag a genuine answer to an open question, even though it's short", () => {
+    const input = buildSkillInput(
+      contextWith([
+        msg("outbound", "How can you pay? PayPal is available."),
+        msg("inbound", "Ok I wanna pay now"),
+      ]),
+    );
+    expect(input).not.toContain("Fresh-turn check");
+  });
+
+  it("does NOT flag a genuine new request, even one phrased in broken English", () => {
+    const input = buildSkillInput(
+      contextWith([
+        msg("outbound", "Good morning! Your videos are being worked on and will be delivered within 24 hours."),
+        msg("inbound", "Yes I know I wanna request service another"),
+      ]),
+    );
+    expect(input).not.toContain("Fresh-turn check");
+
+    const input2 = buildSkillInput(contextWith([msg("inbound", "I have request service another")]));
+    expect(input2).not.toContain("Fresh-turn check");
+  });
+
+  it("does NOT flag a real, substantive one-word-ish answer like 'Website'", () => {
+    const input = buildSkillInput(
+      contextWith([
+        msg("outbound", "What kind of property is the new video for?"),
+        msg("inbound", "Website"),
+      ]),
+    );
+    expect(input).not.toContain("Fresh-turn check");
+  });
+
+  it("adds no fresh-turn line when there is no inbound message at all", () => {
+    const input = buildSkillInput(contextWith([msg("outbound", "Hi there!")]));
+    expect(input).not.toContain("Fresh-turn check");
+  });
+
+  it("checks the LATEST inbound message specifically, not an earlier one", () => {
+    const input = buildSkillInput(
+      contextWith([msg("inbound", "Hey"), msg("outbound", "Hi! What can I help with?"), msg("inbound", "Website")]),
+    );
+    expect(input).not.toContain("Fresh-turn check");
+  });
+});
+
+describe("buildSkillInput — payment claim guard", () => {
+  it("fires when ready_to_start is reached but no payment milestone exists", () => {
+    const input = buildSkillInput(contextWith([msg("inbound", "hi")], ["ready_to_start"]));
+    expect(input).toContain("Payment claim guard");
+    expect(input).toContain("ready_to_start alone is not proof of payment");
+    expect(input).toContain("Do NOT state or imply that the client has already purchased");
+  });
+
+  it("does NOT fire once payment_confirmed has actually been reached", () => {
+    const input = buildSkillInput(contextWith([msg("inbound", "hi")], ["ready_to_start", "payment_confirmed"]));
+    expect(input).not.toContain("Payment claim guard");
+  });
+
+  it("does NOT fire once payment_proof_received has actually been reached", () => {
+    const input = buildSkillInput(contextWith([msg("inbound", "hi")], ["ready_to_start", "payment_proof_received"]));
+    expect(input).not.toContain("Payment claim guard");
+  });
+
+  it("does NOT fire when ready_to_start was never reached, even with other milestones", () => {
+    const input = buildSkillInput(contextWith([msg("inbound", "hi")], ["payment_intent"]));
+    expect(input).not.toContain("Payment claim guard");
+  });
+
+  it("does NOT fire when no milestones have been reached at all", () => {
+    const input = buildSkillInput(contextWith([msg("inbound", "hi")]));
+    expect(input).not.toContain("Payment claim guard");
+  });
+});
+
+describe("buildSkillInput — near-duplicate alert (functionally repeated replies)", () => {
+  const longQuestionWithLink =
+    "To confirm, you'd like to proceed with a new video for $149, correct? I'll need the property photos to get " +
+    "started. Could you please send them over? You can pay via PayPal. Here is the payment link: " +
+    "https://www.paypal.com/ncp/payment/5EPS9L7R333R4";
+  const longQuestionNoLink =
+    "To confirm, you'd like to proceed with a new video for $149, correct? I'll need the property photos to get " +
+    "started. Could you please send them over?";
+
+  it("flags the real 2026-08-25 incident shape: same core question, a trailing sentence dropped", () => {
+    const input = buildSkillInput(
+      contextWith([
+        msg("outbound", longQuestionWithLink),
+        msg("inbound", "Hey"),
+        msg("outbound", longQuestionNoLink),
+      ]),
+    );
+    expect(input).toContain("Near-duplicate alert");
+    expect(input).toContain("functionally repeated 2 times");
+    expect(input).not.toContain("Repetition alert"); // the two texts are NOT byte-identical
+  });
+
+  it("does not double-report a group whose members are already byte-identical (covered by Repetition alert instead)", () => {
+    const input = buildSkillInput(
+      contextWith([msg("outbound", longQuestionNoLink), msg("outbound", longQuestionNoLink)]),
+    );
+    expect(input).toContain("Repetition alert");
+    expect(input).not.toContain("Near-duplicate alert");
+  });
+
+  it("does not flag two short, legitimately different price quotes in different currencies", () => {
+    const input = buildSkillInput(
+      contextWith([
+        msg("outbound", "It's $149 per video, all inclusive."),
+        msg("outbound", "It's £109.23 per video, all inclusive."),
+      ]),
+    );
+    expect(input).not.toContain("Near-duplicate alert");
+  });
+
+  it("does not flag two genuinely unrelated long replies", () => {
+    const input = buildSkillInput(
+      contextWith([
+        msg(
+          "outbound",
+          "I've confirmed receipt of your payment. I'll start working on your videos now! Expect delivery within 24 hours.",
+        ),
+        msg(
+          "outbound",
+          "Thanks for sending the photos over — they look great and I'll get started on the edit right away for you.",
+        ),
+      ]),
+    );
+    expect(input).not.toContain("Near-duplicate alert");
+  });
+
+  it("still allows a genuine reopen — the near-duplicate line explicitly permits it when the client asks again", () => {
+    const input = buildSkillInput(
+      contextWith([msg("outbound", longQuestionWithLink), msg("outbound", longQuestionNoLink)]),
+    );
+    expect(input).toContain("explicitly reopens this exact topic or asks for it again");
+  });
+});
+
+describe("buildSkillInput — real conversation replay (2026-08-25 production incident, conversationId cmt7eas5q0002kv04emzjbilc)", () => {
+  it("flags the fresh-turn check on the exact 'Hey' that previously produced 'What kind of property is this new video for?'", () => {
+    const input = buildSkillInput(
+      contextWith(
+        [
+          msg("inbound", "I have request service another"),
+          msg("outbound", "You've already purchased a video creation service from me. What kind of property is this new video for?"),
+          msg("inbound", "Hey, how are you?"),
+        ],
+        ["ready_to_start"],
+      ),
+    );
+    expect(input).toContain("Fresh-turn check");
+    expect(input).toContain('"Hey, how are you?"');
+    expect(input).toContain("Payment claim guard");
+  });
+
+  it("flags the payment claim guard on the exact turn that produced the 'already purchased' hallucination", () => {
+    const input = buildSkillInput(
+      contextWith(
+        [
+          msg("outbound", "To confirm, you'd like to proceed with a new video for $149, correct? I'll need the property photos to get started. Could you please send them over?"),
+          msg("inbound", "I have request service another"),
+        ],
+        ["ready_to_start"],
+      ),
+    );
+    expect(input).toContain("Payment claim guard");
+    expect(input).toContain("ready_to_start alone is not proof of payment");
+    // Not a low-content message — this is the genuine "another service" request and must still reach the Skill normally.
+    expect(input).not.toContain("Fresh-turn check");
+  });
+
+  it("flags both the fresh-turn check and the near-duplicate alert together on the repeated-'Hey' + dropped-sentence turn", () => {
+    const input = buildSkillInput(
+      contextWith(
+        [
+          msg(
+            "outbound",
+            "To confirm, you'd like to proceed with a new video for $149, correct? I'll need the property photos to get started. Could you please send them over? You can pay via PayPal. Here is the payment link: https://www.paypal.com/ncp/payment/5EPS9L7R333R4",
+          ),
+          msg("inbound", "Hey"),
+          msg("inbound", "Hey"),
+          msg(
+            "outbound",
+            "To confirm, you'd like to proceed with a new video for $149, correct? I'll need the property photos to get started. Could you please send them over?",
+          ),
+          msg("inbound", "Hey how are you"),
+        ],
+        ["ready_to_start"],
+      ),
+    );
+    expect(input).toContain("Fresh-turn check");
+    expect(input).toContain('"Hey how are you"');
+    expect(input).toContain("Near-duplicate alert");
+    expect(input).toContain("Payment claim guard");
+  });
+});
+
 describe("buildSkillInput — media indicator", () => {
   it("appends [image attached] for an image message", () => {
     const input = buildSkillInput(contextWith([msg("inbound", "", { type: "image" })]));

@@ -229,6 +229,34 @@ function summarizeReachedMilestones(reachedMilestones: Milestone[] | undefined):
   );
 }
 
+/**
+ * Confirmed via a real production incident (2026-08-25): once a conversation
+ * reaches ready_to_start (a go-ahead was given, or assets were provided — see
+ * MILESTONE_LABELS above), the model has been observed conflating "the client
+ * said they want to pay" with "the client already paid" and stating this as
+ * fact to the client (e.g. "You've already purchased a video creation service
+ * from me"), even though no payment_confirmed or payment_proof_received
+ * milestone was ever reached in the same conversation. Same "state the fact
+ * deterministically instead of trusting the model to infer it correctly from
+ * a long transcript" reasoning as every other check in this file — this is
+ * additive and never fires once payment has genuinely been confirmed.
+ */
+function summarizePaymentClaimGuard(reachedMilestones: Milestone[] | undefined): string | null {
+  if (!reachedMilestones || !reachedMilestones.includes("ready_to_start")) return null;
+  const paymentConfirmed =
+    reachedMilestones.includes("payment_confirmed") || reachedMilestones.includes("payment_proof_received");
+  if (paymentConfirmed) return null;
+
+  return (
+    `[Payment claim guard: this conversation has reached ready_to_start (a go-ahead was given, or assets were ` +
+    `provided) but has NEVER reached payment_confirmed or payment_proof_received. Do NOT state or imply that the ` +
+    `client has already purchased, already paid, completed payment, or is a paid/existing customer — ready_to_start ` +
+    `alone is not proof of payment, regardless of anything earlier in the transcript that looks like payment intent ` +
+    `(e.g. "I wanna pay now" or a payment link having been sent). If payment status is relevant to your reply, treat ` +
+    `it as still pending/unconfirmed.]`
+  );
+}
+
 // Curly quote variants the model itself has been observed to alternate
 // between across separate generations of essentially the same sentence
 // (e.g. "I've" vs "I've" using U+2019 instead of U+0027) — normalized away
@@ -288,22 +316,203 @@ function detectRepeatedReplies(outbound: SkillInputMessage[]): RepeatedReply[] {
   return repeats;
 }
 
+const URL_SHAPE_GLOBAL = /https?:\/\/\S+/gi;
+
+// >=0.7 was picked against the real 2026-08-25 incident (a reply that dropped
+// its trailing "you can pay via PayPal..." sentence on repeat measured ~0.76
+// against the original).
+const NEAR_DUPLICATE_SIMILARITY_THRESHOLD = 0.7;
+
+// Deliberately higher than MIN_REPEAT_LENGTH (used by the exact-match detector
+// above). Short templated one-liners are exactly where word-set similarity is
+// least reliable — two DIFFERENT, legitimate price quotes in two different
+// currencies (e.g. "It's $149 per video, all inclusive." vs "It's £109.23 per
+// video, all inclusive.") can score close to the same threshold purely from
+// shared boilerplate words, even though the number that actually matters
+// differs. The real incident text this guard targets was ~150+ characters;
+// gating near-duplicate comparison to longer replies only avoids that false
+// positive while still catching the real case with margin to spare.
+const NEAR_DUPLICATE_MIN_LENGTH = 60;
+
+function wordSet(normalizedBody: string): Set<string> {
+  return new Set(
+    normalizedBody
+      .replace(URL_SHAPE_GLOBAL, "")
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}\s]/gu, "")
+      .split(/\s+/)
+      .filter(Boolean),
+  );
+}
+
+function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  let intersection = 0;
+  for (const word of a) if (b.has(word)) intersection++;
+  const union = a.size + b.size - intersection;
+  return union === 0 ? 0 : intersection / union;
+}
+
+interface NearDuplicateGroup {
+  count: number;
+  /** Distinct wordings within this group, first-seen order (for the preview). */
+  texts: string[];
+}
+
+/**
+ * Extends detectRepeatedReplies to catch the case a byte-for-byte comparison
+ * misses: the SAME core question/intent sent more than once with a sentence
+ * added or removed (e.g. a payment-link sentence present the first time, gone
+ * on the retry) — confirmed as the actual real-world shape of the 2026-08-25
+ * incident, where the exact-match guard above never fired because no two
+ * occurrences were byte-identical. Groups outbound replies by word-set
+ * similarity (order-independent, URL-stripped so a dropped/changed link
+ * doesn't itself defeat the match) and only reports a group whose members are
+ * NOT all identical — a fully-identical group is already reported by
+ * detectRepeatedReplies and would be double coverage of the same fact.
+ */
+function detectNearDuplicateReplies(outbound: SkillInputMessage[]): NearDuplicateGroup[] {
+  const candidates = outbound.map((m) => normalizeReplyText(m.body)).filter((t) => t.length >= NEAR_DUPLICATE_MIN_LENGTH);
+  const wordSets = candidates.map(wordSet);
+  const assigned = new Array<boolean>(candidates.length).fill(false);
+  const groups: NearDuplicateGroup[] = [];
+
+  for (let i = 0; i < candidates.length; i++) {
+    if (assigned[i]) continue;
+    const anchorText = candidates[i];
+    const anchorWords = wordSets[i];
+    if (anchorText === undefined || anchorWords === undefined) continue;
+
+    const clusterIndices = [i];
+    for (let j = i + 1; j < candidates.length; j++) {
+      if (assigned[j]) continue;
+      const candidateWords = wordSets[j];
+      if (candidateWords === undefined) continue;
+      if (jaccardSimilarity(anchorWords, candidateWords) >= NEAR_DUPLICATE_SIMILARITY_THRESHOLD) {
+        clusterIndices.push(j);
+      }
+    }
+    if (clusterIndices.length < 2) continue;
+
+    const clusterTexts: string[] = [];
+    for (const idx of clusterIndices) {
+      const text = candidates[idx];
+      if (text !== undefined) clusterTexts.push(text);
+    }
+    if (clusterTexts.length < 2) continue;
+
+    const [firstText, ...restTexts] = clusterTexts;
+    const allIdentical = firstText !== undefined && restTexts.every((t) => t === firstText);
+    if (allIdentical) continue;
+
+    for (const idx of clusterIndices) assigned[idx] = true;
+
+    const distinct: string[] = [];
+    for (const t of clusterTexts) if (!distinct.includes(t)) distinct.push(t);
+    groups.push({ count: clusterTexts.length, texts: distinct });
+  }
+
+  return groups;
+}
+
 function summarizeRepeatedReplies(messages: SkillInputMessage[]): string | null {
   const outbound = messages.filter((m) => m.direction === "outbound");
   const repeats = detectRepeatedReplies(outbound);
-  if (repeats.length === 0) return null;
+  const nearDuplicates = detectNearDuplicateReplies(outbound);
+  if (repeats.length === 0 && nearDuplicates.length === 0) return null;
 
-  const lines = repeats.map(({ text, count }) => {
-    const preview = text.length > 160 ? `${text.slice(0, 160)}...` : text;
-    return `- (sent ${count} times) "${preview}"`;
-  });
+  const blocks: string[] = [];
+
+  if (repeats.length > 0) {
+    const lines = repeats.map(({ text, count }) => {
+      const preview = text.length > 160 ? `${text.slice(0, 160)}...` : text;
+      return `- (sent ${count} times) "${preview}"`;
+    });
+    blocks.push(
+      `[Repetition alert: your own reply text below has already gone out more than once, word-for-word, earlier in ` +
+        `this conversation:\n${lines.join("\n")}\nSending this same content again is a hard failure, regardless of the ` +
+        `reason — do NOT repeat it. Write a reply driven only by the client's CURRENT latest message, even if that ` +
+        `message is short, unrelated, or a bare greeting — unless the client's own latest message explicitly asks for ` +
+        `this exact content again, in which case answer it directly rather than avoiding it.]`,
+    );
+  }
+
+  if (nearDuplicates.length > 0) {
+    const lines = nearDuplicates.map(({ count, texts }) => {
+      const [firstText = ""] = texts;
+      const preview = firstText.length > 160 ? `${firstText.slice(0, 160)}...` : firstText;
+      return `- (functionally repeated ${count} times, wording varies slightly) "${preview}"`;
+    });
+    blocks.push(
+      `[Near-duplicate alert: your own replies below have already made essentially the same point — the same core ` +
+        `question or intent — more than once earlier in this conversation, even though the exact wording differs ` +
+        `slightly (e.g. a sentence added or removed):\n${lines.join("\n")}\nRegenerating the same core content again, ` +
+        `even reworded, is a hard failure, regardless of the reason — do NOT repeat it. Write a reply driven only by ` +
+        `the client's CURRENT latest message, even if that message is short, unrelated, or a bare greeting — unless ` +
+        `the client's own latest message explicitly reopens this exact topic or asks for it again, in which case ` +
+        `answer it directly rather than avoiding it.]`,
+    );
+  }
+
+  return blocks.join("\n");
+}
+
+// Whole-message vocabulary for "carries no new information" detection —
+// greetings, check-ins, and bare acknowledgments only. Deliberately does NOT
+// include "yes"/"no"/"ok" alone being enough to cover a real decision word
+// (e.g. "Ok I wanna pay now" still contains "wanna"/"pay"/"now", none of
+// which are in this list, so the message as a whole still fails the
+// every-word-must-match test below and is correctly NOT flagged).
+const LOW_CONTENT_WORDS = new Set([
+  "hi", "hii", "hiya", "hey", "heyy", "hello", "yo", "hola",
+  "good", "morning", "afternoon", "evening", "day",
+  "how", "r", "are", "you", "u", "doing", "going", "it", "whats", "what's", "wassup", "sup",
+  "there", "still", "you're", "youre",
+  "ok", "okay", "k", "kk", "sure", "thanks", "thank", "np", "cool", "nice", "alright", "yep", "yup", "fine", "great", "awesome",
+]);
+
+const MAX_LOW_CONTENT_WORDS = 6;
+
+/**
+ * True only when EVERY word in the message (after stripping punctuation) is
+ * in the small-talk/greeting/acknowledgment vocabulary above — a whole-message
+ * check, not a "contains a greeting word" check, so "Hey how are you" matches
+ * but "Ok I wanna pay now" or "Yes I know I wanna request service another"
+ * do not (they contain real content words outside the list).
+ */
+function isLowContentMessage(body: string): boolean {
+  const words = body
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s']/gu, "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (words.length === 0 || words.length > MAX_LOW_CONTENT_WORDS) return false;
+  return words.every((w) => LOW_CONTENT_WORDS.has(w));
+}
+
+/**
+ * Confirmed via a real production incident (2026-08-25): a bare "Hey" (or
+ * "Hey how are you", "Hey, how are you?") sent while an earlier question or
+ * workflow stage is still open gets treated by the model as if it answered or
+ * reopened that earlier thread — the model just re-fires the old pending
+ * question and never acknowledges what the client actually said. This states
+ * the fact deterministically (the latest message really does carry no new
+ * information) instead of relying on the model to notice that on its own,
+ * same reasoning as every other check in this file. Purely about HOW to
+ * respond to the latest message — it does not touch reachedMilestones,
+ * pricing, or anything else already stated elsewhere in the prompt.
+ */
+function summarizeFreshTurnCheck(messages: SkillInputMessage[]): string | null {
+  const latestInbound = [...messages].reverse().find((m) => m.direction === "inbound");
+  if (!latestInbound || !isLowContentMessage(latestInbound.body)) return null;
 
   return (
-    `[Repetition alert: your own reply text below has already gone out more than once, word-for-word, earlier in ` +
-    `this conversation:\n${lines.join("\n")}\nSending this same content again is a hard failure, regardless of the ` +
-    `reason — do NOT repeat it. Write a reply driven only by the client's CURRENT latest message, even if that ` +
-    `message is short, unrelated, or a bare greeting — unless the client's own latest message explicitly asks for ` +
-    `this exact content again, in which case answer it directly rather than avoiding it.]`
+    `[Fresh-turn check: the client's LATEST message ("${latestInbound.body.trim()}") is only a short greeting, ` +
+    `check-in, or acknowledgment — it does NOT answer or advance any earlier open question, service request, or ` +
+    `workflow stage, no matter what is still pending above. Respond naturally to this message first. You may briefly ` +
+    `mention what is still needed only if it's genuinely relevant, but do NOT ignore this message and simply re-ask ` +
+    `or re-state an old pending question as if the client had just answered or reopened it.]`
   );
 }
 
@@ -373,10 +582,22 @@ export function buildSkillInput(context: SkillInvocationContext): string {
     lines.push(milestoneCheck);
   }
 
+  const paymentClaimGuard = summarizePaymentClaimGuard(context.reachedMilestones);
+  if (paymentClaimGuard) {
+    lines.push("");
+    lines.push(paymentClaimGuard);
+  }
+
   const repetitionCheck = summarizeRepeatedReplies(context.messages);
   if (repetitionCheck) {
     lines.push("");
     lines.push(repetitionCheck);
+  }
+
+  const freshTurnCheck = summarizeFreshTurnCheck(context.messages);
+  if (freshTurnCheck) {
+    lines.push("");
+    lines.push(freshTurnCheck);
   }
 
   const campaignFollowUpCheck = summarizeCampaignFollowUp(context.campaignFollowUp);
