@@ -39,6 +39,11 @@ export default async function CampaignsPage() {
       </div>
 
       <section style={sectionStyle}>
+        {/* The table's natural width (9 columns, several with nowrap-forced
+            buttons/badges) can exceed the page's 960px max-width on smaller
+            viewports. Scrolling lives on this wrapper, not the page body, so
+            the table never clips or pushes the rest of the page sideways. */}
+        <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
           <thead>
             <tr style={fieldLabel}>
@@ -95,6 +100,7 @@ export default async function CampaignsPage() {
             )}
           </tbody>
         </table>
+        </div>
       </section>
     </main>
   );
