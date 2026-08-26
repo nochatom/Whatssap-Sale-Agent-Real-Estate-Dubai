@@ -96,36 +96,64 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * Deletes a Lead and, explicitly, all of its conversation history —
- * FollowUp, AiDecision, Message, Asset, Conversation — before the Lead row
- * itself, in FK-safe child-to-parent order. Per explicit product decision,
- * this is no longer blocked by real history (the prior P2003-based refusal
- * is gone); the UI is responsible for confirming with the user before
- * calling this, since it's now genuinely destructive and irreversible.
- * Wrapped in a transaction so a failure partway through never leaves
- * orphaned rows — either the whole lead + its history is gone, or nothing
- * is.
+ * Deletes one or more Leads and, explicitly, all of their conversation
+ * history — FollowUp, AiDecision, Message, Asset, Conversation — before the
+ * Lead rows themselves, in FK-safe child-to-parent order. Per explicit
+ * product decision, this is no longer blocked by real history (the prior
+ * P2003-based refusal is gone); the UI is responsible for confirming with
+ * the user before calling this, since it's now genuinely destructive and
+ * irreversible. Wrapped in a single transaction so a failure partway through
+ * never leaves orphaned rows, and so a multi-lead delete is one atomic
+ * all-or-nothing operation instead of N separate requests racing against
+ * whatever else the UI does while they're in flight.
+ *
+ * Two call shapes, both supported: `?id=<single>` (existing callers,
+ * unchanged — still a real `delete()` that 404s via P2025 if already gone)
+ * or a JSON body `{ ids: string[] }` for a genuine bulk delete (uses
+ * `deleteMany`, which silently no-ops on any id that's already gone rather
+ * than erroring — acceptable for the bulk case, where "some of these were
+ * already deleted" isn't worth a partial-failure UX).
  */
 export async function DELETE(request: NextRequest) {
-  const id = request.nextUrl.searchParams.get("id");
-  if (!id) {
-    return NextResponse.json({ error: "id is required" }, { status: 400 });
+  const singleId = request.nextUrl.searchParams.get("id");
+
+  if (singleId) {
+    try {
+      await prisma.$transaction([
+        prisma.followUp.deleteMany({ where: { leadId: singleId } }),
+        prisma.aiDecision.deleteMany({ where: { conversation: { leadId: singleId } } }),
+        prisma.message.deleteMany({ where: { conversation: { leadId: singleId } } }),
+        prisma.asset.deleteMany({ where: { leadId: singleId } }),
+        prisma.conversation.deleteMany({ where: { leadId: singleId } }),
+        prisma.lead.delete({ where: { id: singleId } }),
+      ]);
+    } catch (err) {
+      const response = prismaErrorResponse(err, "P2025", "Lead not found");
+      if (response) return response;
+      throw err;
+    }
+    return NextResponse.json({ deleted: true, count: 1 });
   }
 
+  let body: { ids?: unknown };
   try {
-    await prisma.$transaction([
-      prisma.followUp.deleteMany({ where: { leadId: id } }),
-      prisma.aiDecision.deleteMany({ where: { conversation: { leadId: id } } }),
-      prisma.message.deleteMany({ where: { conversation: { leadId: id } } }),
-      prisma.asset.deleteMany({ where: { leadId: id } }),
-      prisma.conversation.deleteMany({ where: { leadId: id } }),
-      prisma.lead.delete({ where: { id } }),
-    ]);
-  } catch (err) {
-    const response = prismaErrorResponse(err, "P2025", "Lead not found");
-    if (response) return response;
-    throw err;
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "id (query param) or ids (JSON body array) is required" }, { status: 400 });
   }
+  if (!Array.isArray(body.ids) || body.ids.length === 0 || !body.ids.every((v) => typeof v === "string")) {
+    return NextResponse.json({ error: "ids must be a non-empty array of strings" }, { status: 400 });
+  }
+  const ids = body.ids;
 
-  return NextResponse.json({ deleted: true });
+  await prisma.$transaction([
+    prisma.followUp.deleteMany({ where: { leadId: { in: ids } } }),
+    prisma.aiDecision.deleteMany({ where: { conversation: { leadId: { in: ids } } } }),
+    prisma.message.deleteMany({ where: { conversation: { leadId: { in: ids } } } }),
+    prisma.asset.deleteMany({ where: { leadId: { in: ids } } }),
+    prisma.conversation.deleteMany({ where: { leadId: { in: ids } } }),
+    prisma.lead.deleteMany({ where: { id: { in: ids } } }),
+  ]);
+
+  return NextResponse.json({ deleted: true, count: ids.length });
 }

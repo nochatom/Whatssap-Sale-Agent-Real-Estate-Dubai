@@ -6,7 +6,6 @@ import Link from "next/link";
 
 import Badge from "../_components/Badge";
 import WorkflowStepper from "../_components/WorkflowStepper";
-import { runBulkAction } from "../_lib/bulk-action";
 import { colors, space, sectionStyle, fieldLabel, fieldInput, buttonStyle } from "../_lib/ui-tokens";
 
 interface Lead {
@@ -92,6 +91,18 @@ export default function SelectLeadsClient() {
     router.push(`/leads/send?leadIds=${ids.map(encodeURIComponent).join(",")}`);
   }
 
+  /**
+   * One atomic request for the whole selection (server wraps it in a single
+   * transaction — see the DELETE handler in api/leads/route.ts) instead of
+   * N sequential per-lead requests. Always re-fetches from the server
+   * afterward rather than trusting optimistic local removal — same pattern
+   * InboxClient.tsx already uses for conversations. Both changes close a
+   * real race: the old sequential loop left a multi-second window where
+   * clicking Refresh (which wasn't gated by `deleting`) could overwrite the
+   * list with a server snapshot taken before all deletes had landed, and
+   * nothing afterward ever corrected it — that's what caused deleted leads
+   * to reappear.
+   */
   async function handleDeleteSelected() {
     const ids = Array.from(selected);
     if (ids.length === 0) return;
@@ -104,24 +115,21 @@ export default function SelectLeadsClient() {
 
     setDeleting(true);
     setError(null);
-    const failures = await runBulkAction(ids, async (id) => {
-      try {
-        const res = await fetch(`/api/leads?id=${encodeURIComponent(id)}`, { method: "DELETE" });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error ?? "Failed to delete lead");
-        setLeads((prev) => prev.filter((l) => l.id !== id));
-        setSelected((prev) => {
-          const next = new Set(prev);
-          next.delete(id);
-          return next;
-        });
-      } catch (err) {
-        const lead = leads.find((l) => l.id === id);
-        throw new Error(`${lead?.phoneE164 ?? id}: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    });
-    if (failures.length > 0) setError(failures.join(" · "));
-    setDeleting(false);
+    try {
+      const res = await fetch("/api/leads", {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ids }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to delete leads");
+      setSelected(new Set());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      await loadLeads();
+      setDeleting(false);
+    }
   }
 
   return (
@@ -175,7 +183,7 @@ export default function SelectLeadsClient() {
               <option value="not-opted-in">Not opted in</option>
             </select>
           </label>
-          <button onClick={loadLeads} disabled={loading} style={buttonStyle("outline", loading, true)}>
+          <button onClick={loadLeads} disabled={loading || deleting} style={buttonStyle("outline", loading || deleting, true)}>
             Refresh
           </button>
         </div>
