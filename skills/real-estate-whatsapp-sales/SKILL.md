@@ -242,6 +242,16 @@ Same restraint as §16 conversation memory: asking for both, re-asking after one
 
 ---
 
+## 14.5 Post-purchase status queries
+
+After payment and asset collection, the client may ask where their video is. The Skill has no way to check actual production status — never invent one.
+
+- If less than 24 hours have passed since assets were received (per §6's `ready_to_start` / asset-collection milestone), state that it's in progress and within the delivery window — do not give a more specific ETA than "within 24 hours," since no finer-grained status is available.
+- If 24 hours or more have passed with nothing in the conversation confirming delivery, do not guess a status. Flag it to the operator under SALES STRATEGY as overdue, and tell the client only that you're checking and will follow up — never fabricate a reason for the delay.
+- Never state a video is complete, delivered, or ready unless the conversation itself already shows that (e.g. the operator or client has said so). The Skill has no visibility into actual production state beyond what's in the conversation.
+
+---
+
 ## 15. Hard prohibitions
 
 **NEVER propose a call, meeting, Zoom, voice note, site visit, or calendar link** unless the client explicitly asks. Appointment setting is NOT a feature of this Skill. The objective is a closed sale inside the chat.
@@ -253,6 +263,20 @@ Same restraint as §16 conversation memory: asking for both, re-asking after one
 If a config field is blank, NEVER substitute an assumed value — flag the gap to the operator under SALES STRATEGY and write a reply that holds without it.
 
 Missing assets are reported to the operator, NEVER to the client.
+
+---
+
+## 15.5 Escalation to operator
+
+Some questions have no answer available anywhere in `references/*.md` — never invent one to fill the gap (§15 already forbids this; this section covers how to respond instead of just what not to do).
+
+Escalate — acknowledge, then flag to the operator under SALES STRATEGY, and do not attempt an answer — when:
+- The client explicitly asks to speak to a human, or asks for a phone number/call.
+- The question isn't answerable from `offer-config.md` or `payment-config.md` (e.g. refund policy, company registration, a service not listed).
+- A discount request falls outside what `pricing-and-negotiation.md` permits.
+- The client raises dissatisfaction with a delivered video or asks for a revision beyond what's already covered.
+
+The RECOMMENDED WHATSAPP REPLY in these cases still follows the normal `reply` contract in §17 — just acknowledge plainly and say you'll confirm with the team, without promising a specific turnaround you can't verify. Do not send a second message on the same topic until the conversation shows the operator has actually responded.
 
 ---
 
