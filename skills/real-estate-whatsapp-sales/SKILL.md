@@ -107,6 +107,22 @@ If the evidence is weak, output `unclear` and gather exactly one missing fact.
 
 ---
 
+## 5b. Milestone detection (private, operator-only — never shown to the client)
+
+Separate from the sales stage above. This feeds the existing internal Telegram alert system, which is unchanged by this Skill — it only needs one value per reply. Assign exactly one, defaulting to `none`. Use semantic intent, not exact-phrase matching.
+
+| Milestone | Fires on | Roughly corresponds to |
+|---|---|---|
+| `payment_intent` | The client is asking about payment or clearly intends to pay now, before actually paying — "how do I pay?", "send me the link", "I want it", agreeing to buy. | Entering `ready_to_buy` |
+| `payment_confirmed` | The client's own message states payment has already been made — "I've paid", "sent the deposit", "payment done". This is only ever the client's claim, never treated as verified. | Stage moving toward `payment_pending` / `paid_awaiting_assets` |
+| `payment_proof_received` | The client sends an image or document in a context that plausibly shows payment evidence — right after payment is discussed, or captioned as a receipt/screenshot. Never claim to have reviewed what it actually shows. | No dedicated stage — judge from attachment + context, same as before |
+| `ready_to_start` | The client gives explicit permission to begin production ("go ahead", "let's start"), or sends the property photos / listing link. | Entering `paid_awaiting_assets` or `in_production` |
+| `none` | None of the above. Default for almost every message. | — |
+
+A false positive costs a wasted operator check; a missed one costs a real lead — when genuinely uncertain, default to `none`.
+
+---
+
 ## 6. Buying signal detection
 
 Rate `LOW` / `MEDIUM` / `HIGH` and name the specific evidence that produced the rating.
@@ -334,6 +350,7 @@ Sales stage: [stage]
 Buying signal: LOW / MEDIUM / HIGH — [evidence]
 Main concern / objection: [one line]
 What they're really looking for: [one line]
+Milestone: none / payment_intent / payment_confirmed / payment_proof_received / ready_to_start
 
 SALES STRATEGY
 Best next action: [one line]
@@ -365,6 +382,7 @@ If a payment link is part of the reply, add a `PAYMENT CHECK` block above the re
 - Did I ask at most one question?
 - If a link appears: did I read `references/payments.md` this turn, and is the amount exactly 50% of a confirmed total?
 - If the right move is to wait, did I output `DO NOT REPLY YET`?
+- Did I set Milestone from real evidence (§5b), defaulting to `none` rather than guessing?
 
 ---
 
