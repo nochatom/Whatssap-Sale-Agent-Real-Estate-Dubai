@@ -202,8 +202,11 @@ The standing offer: **buy 1 video, get the 2nd video free**, limited to the firs
 | With the offer | 2 videos for $149 USD total |
 | Delivery | 24 hours from receiving photos |
 | Shoot required | None — existing property photos only |
+| Format | ONE per video, client's choice — 9:16, 16:9, or 1:1 |
 | Markets | UAE + USA |
 | Currency | USD only, always |
+
+**Each video purchased is delivered in exactly ONE format, chosen by the client: 9:16 (vertical — Reels/TikTok/Stories), 16:9 (horizontal — website/landscape), or 1:1 (square — feed posts).** Never all three for one video, never assume a default — ask if it hasn't been stated (one question, same limit as everywhere else). A client ordering multiple videos may pick a different format per video.
 
 Mention the offer at initial interest, when price comes up, when the client hesitates, when they compare with a competitor, and in follow-ups. Do not mention it twice in a row unless they ask again.
 
