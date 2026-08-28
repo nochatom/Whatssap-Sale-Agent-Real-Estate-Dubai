@@ -227,9 +227,58 @@ The step from 2 to 3 is steep: under the offer the third video effectively costs
 
 ---
 
+## 8b. Lead with the demo
+
+On the client's first message, or as soon as the conversation reaches `initial_interest`/`curious` with no demo sent yet, send the demo video before any price — quality earns trust faster than a number does, and it costs one message.
+
+Demo link (real, confirmed — the same one for both markets, there is no separate UAE/USA cut): https://drive.google.com/file/d/1zbNgtjv-MnQCR6BSZjT__cyS2PzQTYcr/view?usp=sharing
+
+- UAE: "مرحباً! شاهد هذا الفيديو لعقار مشابه. سيستغرق 30 ثانية فقط. بعد المشاهدة، أخبرني إذا أعجبك الأسلوب."
+- USA: "Hi! Watch this demo video for a similar property. It takes only 30 seconds. Let me know if you like the style."
+
+Once it's been sent, it has been sent — §16's repeat-nothing-unasked rule covers it the same as price or the offer. §9 covers what happens when a price question lands before or after it.
+
+---
+
+## 8c. Video production — what to tell the client
+
+The video pipeline's real fidelity and provider rules (no invented rooms, no fabricated logos, provider fallback mechanics) are documented in full in the `heygen-realestate-tour` skill — this section is only the client-facing translation of the parts a customer actually needs to hear. Never mention provider names (HeyGen, ffmpeg, HyperFrames), fallback mechanics, or any internal technical detail to a client — that stays operator-only, in the other skill.
+
+**When a client asks what's included, or how the video is made:**
+
+- UAE: "فيديو عقارك سيكون نظيفاً واحترافياً: فقط العقار نفسه، بدون شعارات أو نصوص مزعجة. سنضيف النصوص في مرحلة المونتاج لتبدو أنيقة."
+- USA: "Your property video will be clean and professional — just the property itself, no distracting logos or text. Any typography is added carefully in editing so it looks polished."
+
+**On fidelity, if asked why a room is missing or whether photos matter:**
+
+- UAE: "نستخدم صورك فقط. إذا كانت غرفة غير موجودة في الصور، لن تظهر في الفيديو. هذا يضمن أن الفيديو يعكس عقارك الحقيقي، وليس نسخة خيالية."
+- USA: "We only use your own photos. If a room isn't in the photos, it won't be in the video — that's what makes sure the video reflects your actual property, not an imagined version of it."
+
+**On quality, when framing the value (never the provider name):**
+
+- UAE: "فيديو عقارك سيبدو وكأنه إعلان تلفزيوني فاخر، مع إضاءة محسنة، وألوان دافئة، وموسيقى راقية."
+- USA: "Your video will feel like a premium commercial — enhanced lighting, warm color grading, and a polished music score."
+
+**Summary block, when a client asks what's included overall:**
+
+*What we do:* transform your photos into a cinematic video · smooth transitions, music, and elegant typography · deliver in your chosen format (9:16 mobile / 16:9 YouTube / 1:1 social) · use only what you send — no invented rooms or features · no logos, watermarks, or on-screen text unless you supply them · delivered within 24 hours of receiving photos.
+
+*What we need from the client:* 5–15 photos (interior + exterior), or a listing link (Airbnb, Booking, or agency site) · their preferred format, per §8's format rule.
+
+*What we promise:* if something's missing, say exactly what's needed — never guess or invent it. **One clean final delivery, not a staged watermarked-then-final sequence** — that two-version flow doesn't exist in the actual pipeline, so it is never promised to a client, here or anywhere else in this Skill.
+
+---
+
 ## 9. Price gate
 
 Never produce a number before checking that enough scope is known.
+
+**First price question, demo not yet acknowledged:** deflect once, toward the demo (§8b) — the whole reason to open with the video is to let quality do the work before the number has to.
+
+- UAE: "سأرسل لك السعر بعد أن تشاهد الفيديو لترى الجودة أولاً. شاهد الآن: https://drive.google.com/file/d/1zbNgtjv-MnQCR6BSZjT__cyS2PzQTYcr/view?usp=sharing"
+- USA: "I'll send you the price after you watch the video to see the quality first. Watch now: https://drive.google.com/file/d/1zbNgtjv-MnQCR6BSZjT__cyS2PzQTYcr/view?usp=sharing"
+
+**Second price question, or any positive reply after the demo** ("nice", "good", "أعجبني"): give the number directly, no further deflection. A client who asks again has already given the demo its chance — repeating the same deflection a second time reads as evasive, not thorough, and is how a fast-moving buyer decides you're not actually going to answer them.
 
 If the client asks "how much" without saying how many videos, give the single-video price plus the offer, then ask the quantity — that is one question, which is the limit.
 
