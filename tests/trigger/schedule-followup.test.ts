@@ -452,6 +452,11 @@ describe("maybeScheduleFollowUp", () => {
       reason: "message delivered but not read",
       triggerAiDecisionId: "decision_9",
     });
+    // This is the organic mechanism, distinct from the fixed campaign
+    // sequence — its rows must never carry a sequenceStep, so the
+    // sequenceStep != null branch in runScheduledFollowUp (milestone guard,
+    // campaignFollowUpEnabled re-check) never applies to them.
+    expect(createArgs.data.sequenceStep).toBeUndefined();
 
     // scheduleFollowUp() was called internally, connecting the new row to Trigger.dev.
     expect(triggerSpy).toHaveBeenCalledWith(

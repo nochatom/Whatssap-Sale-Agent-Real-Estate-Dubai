@@ -78,6 +78,83 @@ describe("PATCH /api/campaigns/[id]", () => {
     expect(campaignUpdate).not.toHaveBeenCalled();
   });
 
+  it("accepts followUpDelayMinutes alongside the required toggle and persists both", async () => {
+    campaignUpdate.mockResolvedValue({ id: "camp_1", campaignFollowUpEnabled: true, followUpDelayMinutes: 2880 });
+
+    const res = await PATCH(makeRequest({ campaignFollowUpEnabled: true, followUpDelayMinutes: 2880 }), {
+      params: Promise.resolve({ id: "camp_1" }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(campaignUpdate).toHaveBeenCalledWith({
+      where: { id: "camp_1" },
+      data: { campaignFollowUpEnabled: true, followUpDelayMinutes: 2880 },
+    });
+  });
+
+  it("omits followUpDelayMinutes from the update when the caller doesn't send it (leaves it untouched)", async () => {
+    campaignUpdate.mockResolvedValue({ id: "camp_1", campaignFollowUpEnabled: true });
+
+    await PATCH(makeRequest({ campaignFollowUpEnabled: true }), {
+      params: Promise.resolve({ id: "camp_1" }),
+    });
+
+    expect(campaignUpdate).toHaveBeenCalledWith({
+      where: { id: "camp_1" },
+      data: { campaignFollowUpEnabled: true },
+    });
+  });
+
+  it("accepts a null followUpDelayMinutes to clear it", async () => {
+    campaignUpdate.mockResolvedValue({ id: "camp_1", campaignFollowUpEnabled: true, followUpDelayMinutes: null });
+
+    const res = await PATCH(makeRequest({ campaignFollowUpEnabled: true, followUpDelayMinutes: null }), {
+      params: Promise.resolve({ id: "camp_1" }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(campaignUpdate).toHaveBeenCalledWith({
+      where: { id: "camp_1" },
+      data: { campaignFollowUpEnabled: true, followUpDelayMinutes: null },
+    });
+  });
+
+  it("400s when followUpDelayMinutes is zero", async () => {
+    const res = await PATCH(makeRequest({ campaignFollowUpEnabled: true, followUpDelayMinutes: 0 }), {
+      params: Promise.resolve({ id: "camp_1" }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(campaignUpdate).not.toHaveBeenCalled();
+  });
+
+  it("400s when followUpDelayMinutes is negative", async () => {
+    const res = await PATCH(makeRequest({ campaignFollowUpEnabled: true, followUpDelayMinutes: -5 }), {
+      params: Promise.resolve({ id: "camp_1" }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(campaignUpdate).not.toHaveBeenCalled();
+  });
+
+  it("400s when followUpDelayMinutes is not an integer", async () => {
+    const res = await PATCH(makeRequest({ campaignFollowUpEnabled: true, followUpDelayMinutes: 12.5 }), {
+      params: Promise.resolve({ id: "camp_1" }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(campaignUpdate).not.toHaveBeenCalled();
+  });
+
+  it("400s when followUpDelayMinutes is not a number or null", async () => {
+    const res = await PATCH(makeRequest({ campaignFollowUpEnabled: true, followUpDelayMinutes: "2880" }), {
+      params: Promise.resolve({ id: "camp_1" }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(campaignUpdate).not.toHaveBeenCalled();
+  });
+
   it("400s on invalid JSON", async () => {
     const res = await PATCH(makeInvalidJsonRequest(), { params: Promise.resolve({ id: "camp_1" }) });
 
