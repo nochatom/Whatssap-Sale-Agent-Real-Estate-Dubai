@@ -134,6 +134,31 @@ describe("runScheduledFollowUp", () => {
     expect(followUpUpdate).toHaveBeenCalledWith({ where: { id: "fu_1" }, data: { status: "CANCELLED" } });
   });
 
+  it("cancels without sending when the customer replies while the Skill call is in flight", async () => {
+    // First read (the early guard) sees no reply yet; the second, fresh read
+    // right before sending sees a reply that arrived during invokeSkill.
+    conversationFindUniqueOrThrow
+      .mockResolvedValueOnce({
+        id: "conv_1",
+        campaignId: "camp_1",
+        lastInboundAt: new Date("2026-08-01T09:00:00Z"), // before CREATED_AT
+        lead: { id: "lead_1", phoneE164: "+15551234567" },
+      })
+      .mockResolvedValueOnce({
+        lastInboundAt: new Date("2026-08-02T00:00:00Z"), // after CREATED_AT
+      });
+    invokeSkillMock.mockResolvedValue(successDecision("reply"));
+
+    const result = await runScheduledFollowUp(PAYLOAD);
+
+    expect(result).toEqual({
+      actioned: false,
+      reason: "customer replied while the follow-up's Skill call was in flight",
+    });
+    expect(followUpUpdate).toHaveBeenCalledWith({ where: { id: "fu_1" }, data: { status: "CANCELLED" } });
+    expect(sendOutboundTrigger).not.toHaveBeenCalled();
+  });
+
   it("invokes the Skill as behavior state F", async () => {
     invokeSkillMock.mockResolvedValue(successDecision("do_not_reply_yet"));
 

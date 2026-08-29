@@ -359,6 +359,26 @@ export async function runScheduledFollowUp(
     return { actioned: false, reason: "no campaign and no known sender number for this conversation" };
   }
 
+  // Re-verify freshness right before sending. The reply-guard above ran
+  // BEFORE invokeSkill — which can take tens of seconds across the
+  // Ox Alpha -> Qwen -> Cloudflare fallback chain — so a customer reply
+  // arriving during that call is invisible to that earlier check. Without
+  // this second read, a stale follow-up (e.g. a "checking in on your video"
+  // re-engagement) can still land after the customer has already moved the
+  // conversation on to something else, because it already cleared the only
+  // guard that would have caught it.
+  const freshConversation = await prisma.conversation.findUniqueOrThrow({
+    where: { id: conversation.id },
+    select: { lastInboundAt: true },
+  });
+  if (freshConversation.lastInboundAt && freshConversation.lastInboundAt > followUp.createdAt) {
+    await prisma.followUp.update({ where: { id: followUp.id }, data: { status: "CANCELLED" } });
+    logger.log("schedule-followup: cancelled just before send, customer replied while the Skill call was in flight", {
+      followUpId: followUp.id,
+    });
+    return { actioned: false, reason: "customer replied while the follow-up's Skill call was in flight" };
+  }
+
   await sendOutboundTask.trigger(
     {
       conversationId: conversation.id,
