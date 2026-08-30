@@ -51,10 +51,25 @@ export interface SendOutboundPayload {
    * sending a request Meta would reject.
    */
   replyToMessageId?: string;
+  /**
+   * Present ONLY when this send is a scheduled follow-up (either the fixed
+   * 48h/48h campaign sequence or the organic, AI-decision-triggered one) —
+   * set by schedule-followup.ts, never by send-ai-reply.ts or a campaign
+   * opener. Enables one last staleness check immediately before the actual
+   * WhatsApp call: schedule-followup.ts already re-checks for a customer
+   * reply right before triggering this task, but this task itself is
+   * queued (concurrencyLimit 1 per sender) and can sit behind other sends
+   * for that same number — long enough for a reply to arrive in the
+   * meantime, after schedule-followup's own check already passed. Without
+   * this, a follow-up already sitting in that queue would still go out
+   * on top of a reply the customer just sent.
+   */
+  followUpGuard?: { followUpId: string; createdAt: string };
 }
 
 export type SendOutboundResult =
   | { sent: false; blockedBy: ComplianceFailure }
+  | { sent: false; skippedStale: true }
   | { sent: true; waMessageId: string; messageId: string };
 
 /**
@@ -110,6 +125,30 @@ export async function sendOutbound(payload: SendOutboundPayload): Promise<SendOu
       failedCheck: gate.failedCheck,
     });
     return { sent: false, blockedBy: gate.failedCheck as ComplianceFailure };
+  }
+
+  // Last-moment freshness check, follow-up sends only. This is the true
+  // point of no return — nothing meaningful delays execution between here
+  // and the actual Meta API call below — so a fresh read here catches a
+  // reply that landed while this task was queued, which an earlier check
+  // (made before this task was even triggered) cannot see.
+  if (payload.followUpGuard) {
+    const freshConversation = await prisma.conversation.findUniqueOrThrow({
+      where: { id: payload.conversationId },
+      select: { lastInboundAt: true },
+    });
+    const followUpCreatedAt = new Date(payload.followUpGuard.createdAt);
+    if (freshConversation.lastInboundAt && freshConversation.lastInboundAt > followUpCreatedAt) {
+      await prisma.followUp.update({
+        where: { id: payload.followUpGuard.followUpId },
+        data: { status: "CANCELLED" },
+      });
+      logger.log(
+        "send-outbound: cancelled a stale follow-up immediately before sending — customer replied while it was queued",
+        { followUpId: payload.followUpGuard.followUpId, conversationId: payload.conversationId },
+      );
+      return { sent: false, skippedStale: true };
+    }
   }
 
   const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;

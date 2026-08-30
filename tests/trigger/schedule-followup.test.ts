@@ -232,6 +232,7 @@ describe("runScheduledFollowUp", () => {
         senderPhoneNumberId: "999888777",
         idempotencyKey: "out:followup:fu_1",
         body: "Still there? Happy to answer anything.",
+        followUpGuard: { followUpId: "fu_1", createdAt: CREATED_AT.toISOString() },
       },
       { concurrencyKey: "999888777" },
     );
@@ -252,6 +253,10 @@ describe("runScheduledFollowUp", () => {
         senderPhoneNumberId: "999888777",
         idempotencyKey: "out:followup:fu_1",
         body: "Still there? Happy to answer anything.",
+        // Lets send-outbound catch a reply that arrives while this task
+        // sits queued — the exact "customer says Hey, queued follow-up
+        // still goes out a minute later" race this fix closes.
+        followUpGuard: { followUpId: "fu_1", createdAt: CREATED_AT.toISOString() },
       },
       { concurrencyKey: "999888777" },
     );
@@ -612,6 +617,17 @@ describe("runScheduledFollowUp — campaign follow-up sequence (sequenceStep set
     // Step 2 was scheduled.
     const [createArgs] = followUpCreate.mock.calls[0];
     expect(createArgs.data).toMatchObject({ conversationId: "conv_1", leadId: "lead_1", sequenceStep: 2 });
+  });
+
+  it("passes followUpGuard so send-outbound can catch a reply that arrives while this send sits queued — the fixed sequence gets the same protection as the organic mechanism", async () => {
+    await runScheduledFollowUp(SEQ_PAYLOAD);
+
+    expect(sendOutboundTrigger).toHaveBeenCalledWith(
+      expect.objectContaining({
+        followUpGuard: { followUpId: "fu_seq1", createdAt: CREATED_AT.toISOString() },
+      }),
+      expect.anything(),
+    );
   });
 
   it("does NOT schedule anything further after step 2 (Final Follow-up) sends", async () => {

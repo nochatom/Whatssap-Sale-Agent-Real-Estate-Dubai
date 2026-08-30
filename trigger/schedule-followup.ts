@@ -387,6 +387,13 @@ export async function runScheduledFollowUp(
       senderPhoneNumberId: sender.senderPhoneNumberId,
       idempotencyKey: buildFollowUpIdempotencyKey(followUp.id),
       body: result.decision.recommendedReply.text,
+      // Lets send-outbound re-check for a reply immediately before it
+      // actually sends — the fresh check above only covers up to the
+      // moment this task is triggered, not the time it then spends queued
+      // (concurrencyLimit 1 per sender) before it runs. Applies identically
+      // whether this is the fixed 48h/48h sequence or the organic
+      // mechanism — both share this one call site.
+      followUpGuard: { followUpId: followUp.id, createdAt: followUp.createdAt.toISOString() },
     },
     { concurrencyKey: sender.senderPhoneNumberId },
   );

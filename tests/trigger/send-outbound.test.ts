@@ -8,6 +8,7 @@ const suppressionListFindUnique = vi.fn();
 const messageCount = vi.fn();
 const messageFindUnique = vi.fn();
 const messageCreate = vi.fn();
+const followUpUpdate = vi.fn();
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
@@ -23,6 +24,7 @@ vi.mock("@/lib/prisma", () => ({
       findUnique: (...args: unknown[]) => messageFindUnique(...args),
       create: (...args: unknown[]) => messageCreate(...args),
     },
+    followUp: { update: (...args: unknown[]) => followUpUpdate(...args) },
   },
 }));
 
@@ -88,6 +90,7 @@ describe("sendOutbound", () => {
     messageCreate.mockReset().mockResolvedValue({ id: "msg_out_1" });
     sendMessageMock.mockReset();
     sendTemplateMessageMock.mockReset();
+    followUpUpdate.mockReset().mockResolvedValue({});
     tasksTriggerMock.mockReset().mockResolvedValue({ id: "run_followup_seq" });
     mockPassingGate();
     process.env.WHATSAPP_ACCESS_TOKEN = "test-token";
@@ -166,6 +169,70 @@ describe("sendOutbound", () => {
     expect(conversationUpdate).toHaveBeenCalledWith({
       where: { id: "conv_1" },
       data: { lastOutboundAt: expect.any(Date) },
+    });
+  });
+
+  describe("followUpGuard — last-moment staleness check for scheduled follow-ups", () => {
+    // Relative to real wall-clock time, not fixed dates — checkServiceWindow
+    // compares conversation.lastInboundAt against the real `now`, so a fixed
+    // past date would fail the compliance gate before ever reaching the new
+    // check. 10 minutes ago comfortably clears both the service window and
+    // the "is this newer than the follow-up" comparison below.
+    const FOLLOW_UP_CREATED_AT = new Date(Date.now() - 10 * 60_000);
+    const FOLLOW_UP_PAYLOAD = {
+      ...BASE_PAYLOAD,
+      idempotencyKey: "out:followup:fu_1",
+      followUpGuard: { followUpId: "fu_1", createdAt: FOLLOW_UP_CREATED_AT.toISOString() },
+    };
+
+    it("reproduces the race: customer replies while the follow-up is queued — cancels instead of sending", async () => {
+      // The follow-up was created 10 minutes ago. schedule-followup's own
+      // checks passed before triggering this task (no reply yet at that
+      // point), but by the time THIS task actually runs — having sat behind
+      // other sends in the same sender's queue — the customer has just
+      // replied, "Hey", 2 minutes ago. The follow-up must not go out on top
+      // of that reply.
+      conversationFindUniqueOrThrow.mockResolvedValue({
+        id: "conv_1",
+        lastInboundAt: new Date(Date.now() - 2 * 60_000),
+      });
+
+      const result = await sendOutbound(FOLLOW_UP_PAYLOAD);
+
+      expect(result).toEqual({ sent: false, skippedStale: true });
+      expect(sendMessageMock).not.toHaveBeenCalled();
+      expect(sendTemplateMessageMock).not.toHaveBeenCalled();
+      expect(messageCreate).not.toHaveBeenCalled();
+      expect(followUpUpdate).toHaveBeenCalledWith({
+        where: { id: "fu_1" },
+        data: { status: "CANCELLED" },
+      });
+    });
+
+    it("still sends when followUpGuard is present but no newer reply exists", async () => {
+      conversationFindUniqueOrThrow.mockResolvedValue({
+        id: "conv_1",
+        lastInboundAt: new Date(Date.now() - 20 * 60_000), // before FOLLOW_UP_CREATED_AT
+      });
+      sendMessageMock.mockResolvedValue({ waMessageId: "wamid.FU1" });
+
+      const result = await sendOutbound(FOLLOW_UP_PAYLOAD);
+
+      expect(result).toEqual({ sent: true, waMessageId: "wamid.FU1", messageId: "msg_out_1" });
+      expect(sendMessageMock).toHaveBeenCalled();
+      expect(followUpUpdate).not.toHaveBeenCalled();
+    });
+
+    it("never runs this extra check for a normal AI reply or campaign send (no followUpGuard)", async () => {
+      sendMessageMock.mockResolvedValue({ waMessageId: "wamid.OUT2" });
+
+      await sendOutbound(BASE_PAYLOAD);
+
+      // Exactly the one, pre-existing fetch — no second freshness read, no
+      // FollowUp lookup at all. Normal AI-reply/campaign sends are
+      // untouched by this change.
+      expect(conversationFindUniqueOrThrow).toHaveBeenCalledTimes(1);
+      expect(followUpUpdate).not.toHaveBeenCalled();
     });
   });
 
