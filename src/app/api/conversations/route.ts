@@ -65,3 +65,35 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({ conversations: result, unreadCount });
 }
+
+/**
+ * Bulk-deletes conversations in a single atomic transaction, same FK-safe
+ * child-to-parent order as the single-conversation DELETE in
+ * /api/conversations/[id] (FollowUp, AiDecision, Message, then Conversation)
+ * — just deleteMany over {in: ids} instead of one id at a time. Mirrors the
+ * existing bulk-delete shape already used by /api/leads. Replaces the
+ * Inbox's prior pattern of N sequential single-delete requests, which read
+ * as "did nothing" once the (now-fixed) unstable take(100) pagination kept
+ * refilling the list with a different arbitrary subset after each request.
+ */
+export async function DELETE(request: NextRequest) {
+  let body: { ids?: unknown };
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "ids (JSON body array) is required" }, { status: 400 });
+  }
+  if (!Array.isArray(body.ids) || body.ids.length === 0 || !body.ids.every((v) => typeof v === "string")) {
+    return NextResponse.json({ error: "ids must be a non-empty array of strings" }, { status: 400 });
+  }
+  const ids = body.ids;
+
+  await prisma.$transaction([
+    prisma.followUp.deleteMany({ where: { conversationId: { in: ids } } }),
+    prisma.aiDecision.deleteMany({ where: { conversationId: { in: ids } } }),
+    prisma.message.deleteMany({ where: { conversationId: { in: ids } } }),
+    prisma.conversation.deleteMany({ where: { id: { in: ids } } }),
+  ]);
+
+  return NextResponse.json({ deleted: true, count: ids.length });
+}

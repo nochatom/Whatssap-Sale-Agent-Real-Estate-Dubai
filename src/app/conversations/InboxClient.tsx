@@ -347,13 +347,24 @@ export default function InboxClient({ initialConversations }: { initialConversat
     if (!window.confirm(confirmMessage)) return;
 
     setBulkBusy(true);
-    const failures = await runBulkAction(ids, async (id) => {
-      const res = await fetch(`/api/conversations/${id}`, { method: "DELETE" });
+    // One request, one transaction — not N sequential single-deletes. That
+    // loop was also what made the earlier unstable-pagination bug read as
+    // "delete does nothing": each delete completed, but the list refetch
+    // between them kept refilling from the same tied-timestamp pool.
+    let deleteError: string | null = null;
+    try {
+      const res = await fetch("/api/conversations", {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ids }),
+      });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to delete conversation");
-    });
-    // Refetch rather than locally reasoning about which of the loop's calls
-    // actually succeeded — simpler and always correct. Same view as currently open.
+      if (!res.ok) deleteError = data.error ?? "Failed to delete conversations";
+    } catch (err) {
+      deleteError = err instanceof Error ? err.message : String(err);
+    }
+    // Refetch rather than locally reasoning about the result — simpler and
+    // always correct. Same view as currently open.
     try {
       const res = await fetch(`/api/conversations${view === "archived" ? "?archived=true" : ""}`);
       const data = await res.json();
@@ -367,7 +378,7 @@ export default function InboxClient({ initialConversations }: { initialConversat
     if (selectedId && ids.includes(selectedId)) setSelectedId(null);
     setCheckedIds(new Set());
     setBulkBusy(false);
-    if (failures.length > 0) window.alert(failures.join(" · "));
+    if (deleteError) window.alert(deleteError);
   }
 
   async function bulkPatch(ids: string[], body: Record<string, boolean>): Promise<string[]> {
