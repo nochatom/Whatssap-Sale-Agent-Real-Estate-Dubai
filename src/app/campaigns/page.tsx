@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import Badge from "../_components/Badge";
 import CopyButton from "../_components/CopyButton";
 import DeleteCampaignButton from "../_components/DeleteCampaignButton";
+import SyncTemplateButton from "../_components/SyncTemplateButton";
 import ToggleFollowUpButton from "../_components/ToggleFollowUpButton";
 import { colors, space, sectionStyle, fieldLabel, buttonStyle } from "../_lib/ui-tokens";
 
@@ -72,8 +73,11 @@ export default async function CampaignsPage() {
                   <Badge tone={camp.status === "ACTIVE" ? "ok" : "neutral"}>{camp.status}</Badge>
                 </td>
                 <td style={{ color: colors.body }}>
-                  {camp.templateName}{" "}
-                  <Badge tone={camp.templateStatus === "APPROVED" ? "ok" : "warn"}>{camp.templateStatus}</Badge>
+                  <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
+                    <span>{camp.templateName}</span>
+                    <Badge tone={camp.templateStatus === "APPROVED" ? "ok" : "warn"}>{camp.templateStatus}</Badge>
+                    <SyncTemplateButton id={camp.id} />
+                  </div>
                 </td>
                 <td style={{ color: colors.body }}>{camp.senderPhoneNumberId}</td>
                 <td style={{ color: colors.body }}>{camp.dailyBudgetPerNumber}</td>

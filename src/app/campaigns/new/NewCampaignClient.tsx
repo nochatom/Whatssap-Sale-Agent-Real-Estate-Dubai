@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 import { colors, space, sectionStyle, fieldLabel, fieldInput, buttonStyle } from "../../_lib/ui-tokens";
+import { stripTemplateDisplaySuffix } from "@/whatsapp/templates";
 
 type TemplateStatus = "PENDING" | "APPROVED" | "REJECTED";
 type CampaignStatus = "DRAFT" | "ACTIVE" | "PAUSED" | "ARCHIVED";
@@ -36,7 +37,10 @@ export default function NewCampaignClient({ defaultSenderPhoneNumberId }: { defa
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           name: name.trim(),
-          templateName: templateName.trim(),
+          // Meta's own UI displays templates as "name · Language" — pasting
+          // that straight in (a real incident, 2026-08-31) silently broke
+          // template lookups and left status stuck at PENDING forever.
+          templateName: stripTemplateDisplaySuffix(templateName),
           templateStatus,
           status,
           dailyBudgetPerNumber: budgetNumber,
@@ -92,7 +96,7 @@ export default function NewCampaignClient({ defaultSenderPhoneNumberId }: { defa
 
           <label style={{ ...fieldLabel, display: "block", marginBottom: space.xs }}>
             Template name *
-            <input value={templateName} onChange={(e) => setTemplateName(e.target.value)} style={{ ...fieldInput, display: "block", marginTop: 4, width: "100%" }} placeholder="Meta-approved template name" />
+            <input value={templateName} onChange={(e) => setTemplateName(e.target.value)} style={{ ...fieldInput, display: "block", marginTop: 4, width: "100%" }} placeholder="e.g. property_video_intro_v1 (not the “name · Language” label)" />
           </label>
 
           <label style={{ ...fieldLabel, display: "block", marginBottom: space.xs }}>
