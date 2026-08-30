@@ -24,8 +24,14 @@ export async function GET(request: NextRequest) {
 
   const conversations = await prisma.conversation.findMany({
     where: showArchived ? { archivedAt: { not: null } } : { archivedAt: null },
-    orderBy: { updatedAt: "desc" },
-    take: 100,
+    // id as a secondary sort key: a bulk CSV import can create hundreds of
+    // conversations with the exact same updatedAt timestamp, and ORDER BY
+    // updatedAt alone has no defined order among those ties — take(100) was
+    // returning an arbitrary, unstable subset of them on every request, so
+    // deleting the visible rows appeared to do nothing once a different
+    // arbitrary 100 from the same tied group reappeared on refetch.
+    orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+    take: 2000,
     include: {
       lead: { select: { phoneE164: true, name: true } },
       campaign: { select: { name: true } },
