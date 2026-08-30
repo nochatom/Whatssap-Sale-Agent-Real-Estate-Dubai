@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
   const leads = await prisma.lead.findMany({
     where: campaignId ? { conversations: { some: { campaignId } } } : undefined,
     orderBy: { createdAt: "desc" },
-    take: 50,
+    take: 2000,
     select: {
       id: true,
       phoneE164: true,
