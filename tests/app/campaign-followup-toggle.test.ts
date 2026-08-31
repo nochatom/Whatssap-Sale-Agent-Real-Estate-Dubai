@@ -205,6 +205,64 @@ describe("PATCH /api/campaigns/[id]", () => {
     });
   });
 
+  it("accepts templateName alongside the required toggle and switches which template the campaign sends", async () => {
+    campaignUpdate.mockResolvedValue({ id: "camp_1", campaignFollowUpEnabled: true, templateName: "property_video_intro_general_v1" });
+
+    const res = await PATCH(makeRequest({ campaignFollowUpEnabled: true, templateName: "property_video_intro_general_v1" }), {
+      params: Promise.resolve({ id: "camp_1" }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(campaignUpdate).toHaveBeenCalledWith({
+      where: { id: "camp_1" },
+      data: { campaignFollowUpEnabled: true, templateName: "property_video_intro_general_v1" },
+    });
+  });
+
+  it("strips Meta's \"name · Language\" display suffix from a pasted templateName", async () => {
+    campaignUpdate.mockResolvedValue({ id: "camp_1", campaignFollowUpEnabled: true, templateName: "property_video_intro_general_v1" });
+
+    await PATCH(makeRequest({ campaignFollowUpEnabled: true, templateName: "property_video_intro_general_v1 · English" }), {
+      params: Promise.resolve({ id: "camp_1" }),
+    });
+
+    expect(campaignUpdate).toHaveBeenCalledWith({
+      where: { id: "camp_1" },
+      data: { campaignFollowUpEnabled: true, templateName: "property_video_intro_general_v1" },
+    });
+  });
+
+  it("omits templateName from the update when the caller doesn't send it (leaves it untouched)", async () => {
+    campaignUpdate.mockResolvedValue({ id: "camp_1", campaignFollowUpEnabled: true });
+
+    await PATCH(makeRequest({ campaignFollowUpEnabled: true }), {
+      params: Promise.resolve({ id: "camp_1" }),
+    });
+
+    expect(campaignUpdate).toHaveBeenCalledWith({
+      where: { id: "camp_1" },
+      data: { campaignFollowUpEnabled: true },
+    });
+  });
+
+  it("400s when templateName is an empty string", async () => {
+    const res = await PATCH(makeRequest({ campaignFollowUpEnabled: true, templateName: "" }), {
+      params: Promise.resolve({ id: "camp_1" }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(campaignUpdate).not.toHaveBeenCalled();
+  });
+
+  it("400s when templateName is only whitespace/suffix with no real name left", async () => {
+    const res = await PATCH(makeRequest({ campaignFollowUpEnabled: true, templateName: "   " }), {
+      params: Promise.resolve({ id: "camp_1" }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(campaignUpdate).not.toHaveBeenCalled();
+  });
+
   it("400s on invalid JSON", async () => {
     const res = await PATCH(makeInvalidJsonRequest(), { params: Promise.resolve({ id: "camp_1" }) });
 

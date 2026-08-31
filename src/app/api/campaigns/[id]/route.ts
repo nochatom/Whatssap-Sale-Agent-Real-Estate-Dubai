@@ -3,6 +3,7 @@ import type { CampaignStatus } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { prismaErrorResponse } from "@/lib/prisma-errors";
+import { stripTemplateDisplaySuffix } from "@/whatsapp/templates";
 
 const VALID_CAMPAIGN_STATUSES: CampaignStatus[] = ["DRAFT", "ACTIVE", "PAUSED", "ARCHIVED"];
 
@@ -34,6 +35,17 @@ interface PatchBody {
    * exactly "ACTIVE". This lets the "Activate"/"Pause" button correct that.
    */
   status?: CampaignStatus;
+  /**
+   * Switches which Meta-approved template this campaign sends. Optional:
+   * omit to leave unchanged. Does NOT touch templateStatus by itself —
+   * changing the name doesn't tell you the new template's real approval
+   * state, so pair this with a follow-up call to
+   * POST /api/campaigns/[id]/sync-template to correct templateStatus from
+   * Meta rather than guessing it here. Runs the same display-suffix strip
+   * as the create form (Meta's own UI shows templates as "name ·
+   * Language") so pasting that label doesn't corrupt the value.
+   */
+  templateName?: string;
 }
 
 /**
@@ -75,6 +87,15 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     );
   }
 
+  let templateName: string | undefined;
+  if ("templateName" in body) {
+    const cleaned = stripTemplateDisplaySuffix(String(body.templateName ?? ""));
+    if (!cleaned) {
+      return NextResponse.json({ error: "templateName must be a non-empty string" }, { status: 400 });
+    }
+    templateName = cleaned;
+  }
+
   try {
     const campaign = await prisma.campaign.update({
       where: { id },
@@ -82,6 +103,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         campaignFollowUpEnabled: body.campaignFollowUpEnabled,
         ...(followUpDelayMinutes !== undefined ? { followUpDelayMinutes } : {}),
         ...(body.status !== undefined ? { status: body.status } : {}),
+        ...(templateName !== undefined ? { templateName } : {}),
       },
     });
     return NextResponse.json({ campaign });
