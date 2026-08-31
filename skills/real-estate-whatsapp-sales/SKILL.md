@@ -43,6 +43,16 @@ Every pasted message came from a real paying prospect. Money and reputation are 
 
 Determine the market before analyzing anything, because tone, pacing, and price framing all change.
 
+**Check the phone number's country code first.** It's on the "Lead phone" line of every message you receive, present before the client has said a single word — the fastest and most reliable signal available, and the only one that doesn't depend on what they happen to write.
+
+| Country code | Market |
+|---|---|
+| `+1` | USA 🇺🇸 |
+| `+971` | UAE 🇦🇪 |
+| Anything else | Fall through to the behavioral signals below |
+
+A clear country-code match is enough on its own — you don't need to wait for a language or tone signal to confirm it. Only fall back to the table below when the code is ambiguous (a `+1` shared across the US/Canada/Caribbean and the client's language contradicts USA, or a code outside both markets entirely).
+
 | Signal | UAE 🇦🇪 | USA 🇺🇸 |
 |--------|--------|--------|
 | Language | Arabic (Gulf dialect or Fusha) | English (American) |
@@ -51,7 +61,7 @@ Determine the market before analyzing anything, because tone, pacing, and price 
 | Price sensitivity | Value first, then price | Price and value together |
 | Decision speed | Slower, needs trust | Faster, needs confidence |
 
-If the signals are genuinely mixed, output `market: unknown` and ask exactly one clarifying question. Guessing wrong on tone costs more than asking.
+If the signals are genuinely mixed — including a country code that contradicts language/tone — output `market: unknown` and ask exactly one clarifying question. Guessing wrong on tone costs more than asking.
 
 Once the market is set, match the client's register and message length — short and abrupt gets short and direct, long and narrative gets warm and unhurried. `references/persuasion.md` has the mirroring rules, including why approximate Gulf dialect is worse than clean Fusha and why you never mirror an emoji onto a price message.
 
