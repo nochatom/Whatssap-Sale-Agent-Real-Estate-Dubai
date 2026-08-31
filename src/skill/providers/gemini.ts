@@ -5,14 +5,13 @@ import { SKILL_DECISION_JSON_SCHEMA, parseExtractionOutput } from "../parse-deci
 import { EXTRACTION_SYSTEM_PROMPT } from "./extraction-prompt";
 import type { SkillProvider } from "./types";
 
-// gemini-2.5-flash: confirmed free-tier-eligible and structured-output-
-// capable as of the current Gemini API docs (checked 2026-08-21). Chosen
-// over the 2.0 line (Google's own pricing page and models page
-// contradicted each other on whether it's still live) and the newest 3.x
-// Flash variants (a Google developer-forum report of schema-constrained
-// output degenerating into repeated tokens on 3.7 Flash) — 2.5 Flash was
-// the most consistently confirmed-live, confirmed-stable choice.
-const MODEL = "gemini-2.5-flash";
+// gemini-3.6-flash: gemini-2.5-flash (the previous choice here) started
+// hard-404ing for new callers as of 2026-08-31 — Google's own error message
+// on that model id now points directly at this one ("no longer available to
+// new users... use models/gemini-3.6-flash"). Confirmed live with a real
+// key against the real API (both a plain generateContent call and, below,
+// the schema-constrained extraction call) before shipping this change.
+const MODEL = "gemini-3.6-flash";
 
 /**
  * Gemini's structured-output support is a documented SUBSET of JSON Schema

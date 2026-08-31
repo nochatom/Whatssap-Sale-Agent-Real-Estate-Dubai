@@ -1,6 +1,6 @@
 import { loadSkillMarkdown } from "./skill-file";
 import { CloudflareQuotaExceededError, invokeCloudflare } from "./providers/cloudflare";
-import { invokeOxAlpha } from "./providers/oxalpha";
+import { invokeGemini } from "./providers/gemini";
 import { invokeQwen } from "./providers/qwen";
 import type { SkillInvocationContext, SkillInvocationResult } from "./types";
 
@@ -92,82 +92,73 @@ async function tryCloudflareTerminal(
 }
 
 /**
- * Middle stage: Ox Alpha. Own credential pre-check, same shape as
+ * Middle stage: Qwen. Own credential pre-check, same shape as
  * tryCloudflareTerminal above. On any failure (thrown or a returned
  * parse_failure), moves to Cloudflare with the identical context and Skill
- * markdown Ox Alpha itself received.
+ * markdown Qwen itself received.
  */
-async function tryOxAlphaFallback(
+async function tryQwenFallback(
   context: SkillInvocationContext,
   primaryErr: Error,
 ): Promise<SkillInvocationResult> {
-  if (!process.env.OPENROUTER_API_KEY) {
-    console.error("invokeSkill: no Ox Alpha fallback is configured (OPENROUTER_API_KEY not set), attempting Cloudflare", {
+  if (!process.env.QWEN_API_KEY) {
+    console.error("invokeSkill: no Qwen fallback is configured (QWEN_API_KEY not set), attempting Cloudflare", {
       reason: primaryErr.message,
     });
     return tryCloudflareTerminal(context, primaryErr, false);
   }
 
   try {
-    const result = await invokeOxAlpha(context, SKILL_MARKDOWN);
+    const result = await invokeQwen(context, SKILL_MARKDOWN);
     if (result.status !== "parse_failure") {
-      console.log("invokeSkill: Ox Alpha fallback succeeded", { status: result.status });
+      console.log("invokeSkill: Qwen fallback succeeded", { status: result.status });
       return result;
     }
-    console.error("invokeSkill: Ox Alpha fallback returned an unusable response, attempting Cloudflare", { reason: result.reason });
+    console.error("invokeSkill: Qwen fallback returned an unusable response, attempting Cloudflare", { reason: result.reason });
     return tryCloudflareTerminal(context, new Error(`unusable_response: ${result.reason}`), false);
   } catch (err) {
-    const oxAlphaErr = err instanceof Error ? err : new Error(String(err));
-    console.error("invokeSkill: Ox Alpha fallback also failed, attempting Cloudflare", { reason: oxAlphaErr.message });
-    return tryCloudflareTerminal(context, oxAlphaErr, false);
+    const qwenErr = err instanceof Error ? err : new Error(String(err));
+    console.error("invokeSkill: Qwen fallback also failed, attempting Cloudflare", { reason: qwenErr.message });
+    return tryCloudflareTerminal(context, qwenErr, false);
   }
 }
 
 /**
- * The one and only routing policy: Qwen -> Ox Alpha -> Cloudflare, for
- * EVERY invokeSkill() call. AI_PROVIDER is intentionally not read anywhere
- * in this file — the prior design let it pin routing to a single named
- * provider with only one narrow fallback partner each (Cloudflare->
- * Anthropic, Qwen->Cloudflare only, Ox Alpha essentially unreachable as a
- * fallback target at all), and in production that meant an explicit
- * AI_PROVIDER=cloudflare silently removed Qwen and Ox Alpha from the
- * picture entirely — both fully configured and unused — while Cloudflare's
- * own fallback partner (Anthropic) was never provisioned. A single
- * provider's quota limit became a full outage instead of a non-event the
- * other two configured providers would have absorbed. Fixed at the
- * routing level, not by touching the AI_PROVIDER value itself: this chain
- * always runs, regardless of what (if anything) AI_PROVIDER is set to.
+ * The one and only routing policy: Gemini -> Qwen -> Cloudflare, for EVERY
+ * invokeSkill() call. AI_PROVIDER is intentionally not read anywhere in this
+ * file — the prior design let it pin routing to a single named provider
+ * with only one narrow fallback partner each, and in production that meant
+ * an explicit AI_PROVIDER=cloudflare silently removed the other configured
+ * providers from the picture entirely. Fixed at the routing level: this
+ * chain always runs, regardless of what (if anything) AI_PROVIDER is set to.
  *
- * Ox Alpha demoted out of the primary slot (2026-08-30): it is an
- * anonymized, undocumented-capability model ("stealth/ox-alpha" on
- * OpenRouter) confirmed via a real production incident to return raw JSON
- * instead of the natural-language reasoning the Skill's prompt expects, and
- * to disregard build-prompt.ts's deterministic per-turn guards (the
- * fresh-turn and repetition checks) that Qwen has been observed following
- * reliably. Kept as the middle fallback rather than removed outright — it's
- * still a real, working provider when Qwen itself is unavailable, and a
- * degraded reply beats none.
+ * Ox Alpha (OpenRouter's "stealth/ox-alpha") removed entirely (2026-08-31,
+ * explicit request) rather than kept as a further fallback — it was already
+ * demoted out of the primary slot for returning raw JSON instead of the
+ * natural-language reasoning the Skill's prompt expects, and for
+ * disregarding build-prompt.ts's deterministic per-turn guards. Gemini
+ * promoted to primary in its place.
  *
- * Every call is fresh and stateless — it always starts at Qwen again
- * regardless of what a previous call fell back to. A RETURNED
- * parse_failure is fallback-worthy here too, not just a thrown error, same
- * as the prior default chain's semantics.
+ * Every call is fresh and stateless — it always starts at Gemini again
+ * regardless of what a previous call fell back to. A RETURNED parse_failure
+ * is fallback-worthy here too, not just a thrown error, same as the prior
+ * default chain's semantics.
  */
 async function invokeProviderChain(context: SkillInvocationContext): Promise<SkillInvocationResult> {
-  let qwenErr: Error;
+  let geminiErr: Error;
   try {
-    const result = await invokeQwen(context, SKILL_MARKDOWN);
+    const result = await invokeGemini(context, SKILL_MARKDOWN);
     if (result.status !== "parse_failure") {
       return result;
     }
-    console.error("invokeSkill: Qwen returned an unusable response, attempting Ox Alpha fallback", { reason: result.reason });
-    qwenErr = new Error(`unusable_response: ${result.reason}`);
+    console.error("invokeSkill: Gemini returned an unusable response, attempting Qwen fallback", { reason: result.reason });
+    geminiErr = new Error(`unusable_response: ${result.reason}`);
   } catch (err) {
-    qwenErr = err instanceof Error ? err : new Error(String(err));
-    console.error("invokeSkill: primary provider (Qwen) failed, attempting Ox Alpha fallback", { reason: qwenErr.message });
+    geminiErr = err instanceof Error ? err : new Error(String(err));
+    console.error("invokeSkill: primary provider (Gemini) failed, attempting Qwen fallback", { reason: geminiErr.message });
   }
 
-  return tryOxAlphaFallback(context, qwenErr);
+  return tryQwenFallback(context, geminiErr);
 }
 
 export async function invokeSkill(context: SkillInvocationContext): Promise<SkillInvocationResult> {

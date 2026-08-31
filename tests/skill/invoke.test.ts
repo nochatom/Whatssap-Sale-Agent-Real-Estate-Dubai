@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const invokeCloudflareMock = vi.fn();
 const invokeQwenMock = vi.fn();
-const invokeOxAlphaMock = vi.fn();
+const invokeGeminiMock = vi.fn();
 
 vi.mock("@/skill/providers/cloudflare", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/skill/providers/cloudflare")>();
@@ -16,8 +16,8 @@ vi.mock("@/skill/providers/qwen", () => ({
   invokeQwen: (...args: unknown[]) => invokeQwenMock(...args),
 }));
 
-vi.mock("@/skill/providers/oxalpha", () => ({
-  invokeOxAlpha: (...args: unknown[]) => invokeOxAlphaMock(...args),
+vi.mock("@/skill/providers/gemini", () => ({
+  invokeGemini: (...args: unknown[]) => invokeGeminiMock(...args),
 }));
 
 const { invokeSkill, isRetryableProviderUnavailable, nextCloudflareQuotaResetAt } = await import("@/skill/invoke");
@@ -53,16 +53,16 @@ const originalAiProvider = process.env.AI_PROVIDER;
 const originalQwenKey = process.env.QWEN_API_KEY;
 const originalCloudflareAccountId = process.env.CLOUDFLARE_ACCOUNT_ID;
 const originalCloudflareApiToken = process.env.CLOUDFLARE_API_TOKEN;
-const originalOpenRouterKey = process.env.OPENROUTER_API_KEY;
+const originalGeminiKey = process.env.GEMINI_API_KEY;
 
 beforeEach(() => {
   invokeCloudflareMock.mockReset();
   invokeQwenMock.mockReset();
-  invokeOxAlphaMock.mockReset();
+  invokeGeminiMock.mockReset();
   process.env.QWEN_API_KEY = "test-qwen-key";
   process.env.CLOUDFLARE_ACCOUNT_ID = "test-account-id";
   process.env.CLOUDFLARE_API_TOKEN = "test-api-token";
-  process.env.OPENROUTER_API_KEY = "test-openrouter-key";
+  process.env.GEMINI_API_KEY = "test-gemini-key";
 });
 
 afterEach(() => {
@@ -74,140 +74,140 @@ afterEach(() => {
   else process.env.CLOUDFLARE_ACCOUNT_ID = originalCloudflareAccountId;
   if (originalCloudflareApiToken === undefined) delete process.env.CLOUDFLARE_API_TOKEN;
   else process.env.CLOUDFLARE_API_TOKEN = originalCloudflareApiToken;
-  if (originalOpenRouterKey === undefined) delete process.env.OPENROUTER_API_KEY;
-  else process.env.OPENROUTER_API_KEY = originalOpenRouterKey;
+  if (originalGeminiKey === undefined) delete process.env.GEMINI_API_KEY;
+  else process.env.GEMINI_API_KEY = originalGeminiKey;
 });
 
 describe("invokeSkill — AI_PROVIDER is ignored entirely (the actual bug fix)", () => {
-  it("still tries Qwen first when AI_PROVIDER=cloudflare — the exact production misconfiguration this fixes", async () => {
+  it("still tries Gemini first when AI_PROVIDER=cloudflare — the exact production misconfiguration this fixes", async () => {
     process.env.AI_PROVIDER = "cloudflare";
-    invokeQwenMock.mockResolvedValueOnce(SUCCESS_RESULT);
+    invokeGeminiMock.mockResolvedValueOnce(SUCCESS_RESULT);
 
     const result = await invokeSkill(CONTEXT);
 
-    expect(invokeQwenMock).toHaveBeenCalledOnce();
+    expect(invokeGeminiMock).toHaveBeenCalledOnce();
     expect(invokeCloudflareMock).not.toHaveBeenCalled();
-    expect(invokeOxAlphaMock).not.toHaveBeenCalled();
+    expect(invokeQwenMock).not.toHaveBeenCalled();
     expect(result).toEqual(SUCCESS_RESULT);
   });
 
-  it("still tries Qwen first when AI_PROVIDER=oxalpha", async () => {
-    process.env.AI_PROVIDER = "oxalpha";
-    invokeQwenMock.mockResolvedValueOnce(SUCCESS_RESULT);
+  it("still tries Gemini first when AI_PROVIDER=qwen", async () => {
+    process.env.AI_PROVIDER = "qwen";
+    invokeGeminiMock.mockResolvedValueOnce(SUCCESS_RESULT);
 
     await invokeSkill(CONTEXT);
 
-    expect(invokeQwenMock).toHaveBeenCalledOnce();
+    expect(invokeGeminiMock).toHaveBeenCalledOnce();
   });
 
-  it("still tries Qwen first when AI_PROVIDER is unset", async () => {
+  it("still tries Gemini first when AI_PROVIDER is unset", async () => {
     delete process.env.AI_PROVIDER;
-    invokeQwenMock.mockResolvedValueOnce(SUCCESS_RESULT);
+    invokeGeminiMock.mockResolvedValueOnce(SUCCESS_RESULT);
 
     await invokeSkill(CONTEXT);
 
-    expect(invokeQwenMock).toHaveBeenCalledOnce();
+    expect(invokeGeminiMock).toHaveBeenCalledOnce();
   });
 
-  it("still tries Qwen first when AI_PROVIDER is an unrecognized/garbage value", async () => {
+  it("still tries Gemini first when AI_PROVIDER is an unrecognized/garbage value", async () => {
     process.env.AI_PROVIDER = "some-garbage-value";
-    invokeQwenMock.mockResolvedValueOnce(SUCCESS_RESULT);
+    invokeGeminiMock.mockResolvedValueOnce(SUCCESS_RESULT);
 
     await invokeSkill(CONTEXT);
 
-    expect(invokeQwenMock).toHaveBeenCalledOnce();
+    expect(invokeGeminiMock).toHaveBeenCalledOnce();
   });
 
   it("falls all the way to Cloudflare even when AI_PROVIDER=cloudflare — no early exit to a single named provider", async () => {
     process.env.AI_PROVIDER = "cloudflare";
+    invokeGeminiMock.mockRejectedValueOnce(new Error("Gemini: 503"));
     invokeQwenMock.mockRejectedValueOnce(new Error("Qwen: 503"));
-    invokeOxAlphaMock.mockRejectedValueOnce(new Error("Ox Alpha: 503"));
     invokeCloudflareMock.mockResolvedValueOnce(SUCCESS_RESULT);
 
     const result = await invokeSkill(CONTEXT);
 
+    expect(invokeGeminiMock).toHaveBeenCalledOnce();
     expect(invokeQwenMock).toHaveBeenCalledOnce();
-    expect(invokeOxAlphaMock).toHaveBeenCalledOnce();
     expect(invokeCloudflareMock).toHaveBeenCalledOnce();
     expect(result).toEqual(SUCCESS_RESULT);
   });
 });
 
-describe("invokeSkill — Qwen -> Ox Alpha -> Cloudflare chain", () => {
-  it("returns Qwen's result directly when it succeeds — Ox Alpha and Cloudflare never called", async () => {
+describe("invokeSkill — Gemini -> Qwen -> Cloudflare chain", () => {
+  it("returns Gemini's result directly when it succeeds — Qwen and Cloudflare never called", async () => {
+    invokeGeminiMock.mockResolvedValueOnce(SUCCESS_RESULT);
+
+    const result = await invokeSkill(CONTEXT);
+
+    expect(result).toEqual(SUCCESS_RESULT);
+    expect(invokeQwenMock).not.toHaveBeenCalled();
+    expect(invokeCloudflareMock).not.toHaveBeenCalled();
+  });
+
+  it("falls back to Qwen on ANY Gemini error — not just a specific error type", async () => {
+    invokeGeminiMock.mockRejectedValueOnce(new Error("Gemini: 429 rate limited"));
     invokeQwenMock.mockResolvedValueOnce(SUCCESS_RESULT);
 
     const result = await invokeSkill(CONTEXT);
 
-    expect(result).toEqual(SUCCESS_RESULT);
-    expect(invokeOxAlphaMock).not.toHaveBeenCalled();
-    expect(invokeCloudflareMock).not.toHaveBeenCalled();
-  });
-
-  it("falls back to Ox Alpha on ANY Qwen error — not just a specific error type", async () => {
-    invokeQwenMock.mockRejectedValueOnce(new Error("Qwen: 429 rate limited"));
-    invokeOxAlphaMock.mockResolvedValueOnce(SUCCESS_RESULT);
-
-    const result = await invokeSkill(CONTEXT);
-
-    expect(invokeOxAlphaMock).toHaveBeenCalledOnce();
+    expect(invokeQwenMock).toHaveBeenCalledOnce();
     expect(invokeCloudflareMock).not.toHaveBeenCalled();
     expect(result).toEqual(SUCCESS_RESULT);
   });
 
-  it("falls back to Ox Alpha with the identical context and Skill markdown Qwen received", async () => {
-    invokeQwenMock.mockRejectedValueOnce(new Error("Qwen: timeout"));
-    invokeOxAlphaMock.mockResolvedValueOnce(SUCCESS_RESULT);
+  it("falls back to Qwen with the identical context and Skill markdown Gemini received", async () => {
+    invokeGeminiMock.mockRejectedValueOnce(new Error("Gemini: timeout"));
+    invokeQwenMock.mockResolvedValueOnce(SUCCESS_RESULT);
 
     await invokeSkill(CONTEXT);
 
+    const [geminiContext, geminiSkillMarkdown] = invokeGeminiMock.mock.calls[0] ?? [];
     const [qwenContext, qwenSkillMarkdown] = invokeQwenMock.mock.calls[0] ?? [];
-    const [oxContext, oxSkillMarkdown] = invokeOxAlphaMock.mock.calls[0] ?? [];
-    expect(oxContext).toEqual(qwenContext);
-    expect(oxSkillMarkdown).toBe(qwenSkillMarkdown);
+    expect(qwenContext).toEqual(geminiContext);
+    expect(qwenSkillMarkdown).toBe(geminiSkillMarkdown);
   });
 
-  it("falls all the way to Cloudflare when both Qwen and Ox Alpha fail", async () => {
+  it("falls all the way to Cloudflare when both Gemini and Qwen fail", async () => {
+    invokeGeminiMock.mockRejectedValueOnce(new Error("Gemini: 503"));
     invokeQwenMock.mockRejectedValueOnce(new Error("Qwen: 503"));
-    invokeOxAlphaMock.mockRejectedValueOnce(new Error("Ox Alpha: 503"));
     invokeCloudflareMock.mockResolvedValueOnce(SUCCESS_RESULT);
 
     const result = await invokeSkill(CONTEXT);
 
+    expect(invokeGeminiMock).toHaveBeenCalledOnce();
     expect(invokeQwenMock).toHaveBeenCalledOnce();
-    expect(invokeOxAlphaMock).toHaveBeenCalledOnce();
     expect(invokeCloudflareMock).toHaveBeenCalledOnce();
     expect(result).toEqual(SUCCESS_RESULT);
   });
 
-  it("falls back to Cloudflare with the identical context and Skill markdown Ox Alpha received", async () => {
-    invokeQwenMock.mockRejectedValueOnce(new Error("Qwen: 503"));
-    invokeOxAlphaMock.mockRejectedValueOnce(new Error("Ox Alpha: timeout"));
+  it("falls back to Cloudflare with the identical context and Skill markdown Qwen received", async () => {
+    invokeGeminiMock.mockRejectedValueOnce(new Error("Gemini: 503"));
+    invokeQwenMock.mockRejectedValueOnce(new Error("Qwen: timeout"));
     invokeCloudflareMock.mockResolvedValueOnce(SUCCESS_RESULT);
 
     await invokeSkill(CONTEXT);
 
-    const [oxContext, oxSkillMarkdown] = invokeOxAlphaMock.mock.calls[0] ?? [];
+    const [qwenContext, qwenSkillMarkdown] = invokeQwenMock.mock.calls[0] ?? [];
     const [cfContext, cfSkillMarkdown] = invokeCloudflareMock.mock.calls[0] ?? [];
-    expect(cfContext).toEqual(oxContext);
-    expect(cfSkillMarkdown).toBe(oxSkillMarkdown);
+    expect(cfContext).toEqual(qwenContext);
+    expect(cfSkillMarkdown).toBe(qwenSkillMarkdown);
   });
 
-  it("skips straight to Cloudflare when Qwen fails and Ox Alpha credentials are unset", async () => {
-    delete process.env.OPENROUTER_API_KEY;
-    invokeQwenMock.mockRejectedValueOnce(new Error("Qwen: 429"));
+  it("skips straight to Cloudflare when Gemini fails and Qwen credentials are unset", async () => {
+    delete process.env.QWEN_API_KEY;
+    invokeGeminiMock.mockRejectedValueOnce(new Error("Gemini: 429"));
     invokeCloudflareMock.mockResolvedValueOnce(SUCCESS_RESULT);
 
     const result = await invokeSkill(CONTEXT);
 
-    expect(invokeOxAlphaMock).not.toHaveBeenCalled();
+    expect(invokeQwenMock).not.toHaveBeenCalled();
     expect(invokeCloudflareMock).toHaveBeenCalledOnce();
     expect(result).toEqual(SUCCESS_RESULT);
   });
 
   it("does NOT invent a reply when all three fail", async () => {
+    invokeGeminiMock.mockRejectedValueOnce(new Error("Gemini: 503"));
     invokeQwenMock.mockRejectedValueOnce(new Error("Qwen: 503"));
-    invokeOxAlphaMock.mockRejectedValueOnce(new Error("Ox Alpha: 503"));
     invokeCloudflareMock.mockRejectedValueOnce(new Error("Cloudflare: bad config"));
 
     const result = await invokeSkill(CONTEXT);
@@ -222,8 +222,8 @@ describe("invokeSkill — Qwen -> Ox Alpha -> Cloudflare chain", () => {
   it("does NOT invent a reply when Cloudflare credentials are unset at the terminal stage", async () => {
     delete process.env.CLOUDFLARE_ACCOUNT_ID;
     delete process.env.CLOUDFLARE_API_TOKEN;
+    invokeGeminiMock.mockRejectedValueOnce(new Error("Gemini: 503"));
     invokeQwenMock.mockRejectedValueOnce(new Error("Qwen: 503"));
-    invokeOxAlphaMock.mockRejectedValueOnce(new Error("Ox Alpha: 503"));
 
     const result = await invokeSkill(CONTEXT);
 
@@ -235,8 +235,8 @@ describe("invokeSkill — Qwen -> Ox Alpha -> Cloudflare chain", () => {
   });
 
   it("marks a triple-failure as retryable when Cloudflare's own failure is specifically quota-exceeded", async () => {
+    invokeGeminiMock.mockRejectedValueOnce(new Error("Gemini: 503"));
     invokeQwenMock.mockRejectedValueOnce(new Error("Qwen: 503"));
-    invokeOxAlphaMock.mockRejectedValueOnce(new Error("Ox Alpha: 503"));
     invokeCloudflareMock.mockRejectedValueOnce(new CloudflareQuotaExceededError(new Error("429")));
 
     const result = await invokeSkill(CONTEXT);
@@ -245,8 +245,8 @@ describe("invokeSkill — Qwen -> Ox Alpha -> Cloudflare chain", () => {
   });
 
   it("does NOT mark a triple-failure as retryable when Cloudflare's failure is not quota-related", async () => {
+    invokeGeminiMock.mockRejectedValueOnce(new Error("Gemini: 503"));
     invokeQwenMock.mockRejectedValueOnce(new Error("Qwen: 503"));
-    invokeOxAlphaMock.mockRejectedValueOnce(new Error("Ox Alpha: 503"));
     invokeCloudflareMock.mockRejectedValueOnce(new Error("Cloudflare: bad config"));
 
     const result = await invokeSkill(CONTEXT);
@@ -264,33 +264,33 @@ describe("invokeSkill — Qwen -> Ox Alpha -> Cloudflare chain", () => {
     ).toBe(false);
   });
 
-  it("always restarts at Qwen on the next call, regardless of what the previous call fell back to", async () => {
-    invokeQwenMock.mockRejectedValueOnce(new Error("Qwen: 429"));
-    invokeOxAlphaMock.mockResolvedValueOnce(SUCCESS_RESULT);
+  it("always restarts at Gemini on the next call, regardless of what the previous call fell back to", async () => {
+    invokeGeminiMock.mockRejectedValueOnce(new Error("Gemini: 429"));
+    invokeQwenMock.mockResolvedValueOnce(SUCCESS_RESULT);
     const first = await invokeSkill(CONTEXT);
     expect(first).toEqual(SUCCESS_RESULT);
+    expect(invokeGeminiMock).toHaveBeenCalledTimes(1);
     expect(invokeQwenMock).toHaveBeenCalledTimes(1);
-    expect(invokeOxAlphaMock).toHaveBeenCalledTimes(1);
 
-    invokeQwenMock.mockResolvedValueOnce(SUCCESS_RESULT);
+    invokeGeminiMock.mockResolvedValueOnce(SUCCESS_RESULT);
     const second = await invokeSkill(CONTEXT);
     expect(second).toEqual(SUCCESS_RESULT);
-    expect(invokeQwenMock).toHaveBeenCalledTimes(2);
-    expect(invokeOxAlphaMock).toHaveBeenCalledTimes(1); // not called again on the second request
+    expect(invokeGeminiMock).toHaveBeenCalledTimes(2);
+    expect(invokeQwenMock).toHaveBeenCalledTimes(1); // not called again on the second request
   });
 
-  it("even after falling all the way to Cloudflare, the next independent request still starts at Qwen", async () => {
+  it("even after falling all the way to Cloudflare, the next independent request still starts at Gemini", async () => {
+    invokeGeminiMock.mockRejectedValueOnce(new Error("Gemini: 503"));
     invokeQwenMock.mockRejectedValueOnce(new Error("Qwen: 503"));
-    invokeOxAlphaMock.mockRejectedValueOnce(new Error("Ox Alpha: 503"));
     invokeCloudflareMock.mockResolvedValueOnce(SUCCESS_RESULT);
     const first = await invokeSkill(CONTEXT);
     expect(first).toEqual(SUCCESS_RESULT);
 
-    invokeQwenMock.mockResolvedValueOnce(SUCCESS_RESULT);
+    invokeGeminiMock.mockResolvedValueOnce(SUCCESS_RESULT);
     const second = await invokeSkill(CONTEXT);
     expect(second).toEqual(SUCCESS_RESULT);
-    expect(invokeQwenMock).toHaveBeenCalledTimes(2);
-    expect(invokeOxAlphaMock).toHaveBeenCalledTimes(1);
+    expect(invokeGeminiMock).toHaveBeenCalledTimes(2);
+    expect(invokeQwenMock).toHaveBeenCalledTimes(1);
     expect(invokeCloudflareMock).toHaveBeenCalledTimes(1);
   });
 
@@ -301,32 +301,32 @@ describe("invokeSkill — Qwen -> Ox Alpha -> Cloudflare chain", () => {
       rawOutput: "not valid json",
     };
 
-    it("falls back to Ox Alpha when Qwen RETURNS a parse_failure (no throw)", async () => {
-      invokeQwenMock.mockResolvedValueOnce(PARSE_FAILURE_RESULT);
-      invokeOxAlphaMock.mockResolvedValueOnce(SUCCESS_RESULT);
-
-      const result = await invokeSkill(CONTEXT);
-
-      expect(invokeOxAlphaMock).toHaveBeenCalledOnce();
-      expect(result).toEqual(SUCCESS_RESULT);
-    });
-
-    it("falls back to Cloudflare when Qwen's parse_failure is followed by Ox Alpha ALSO returning a parse_failure", async () => {
-      invokeQwenMock.mockResolvedValueOnce(PARSE_FAILURE_RESULT);
-      invokeOxAlphaMock.mockResolvedValueOnce({ ...PARSE_FAILURE_RESULT, reason: "Ox Alpha: missing required fields" });
-      invokeCloudflareMock.mockResolvedValueOnce(SUCCESS_RESULT);
+    it("falls back to Qwen when Gemini RETURNS a parse_failure (no throw)", async () => {
+      invokeGeminiMock.mockResolvedValueOnce(PARSE_FAILURE_RESULT);
+      invokeQwenMock.mockResolvedValueOnce(SUCCESS_RESULT);
 
       const result = await invokeSkill(CONTEXT);
 
       expect(invokeQwenMock).toHaveBeenCalledOnce();
-      expect(invokeOxAlphaMock).toHaveBeenCalledOnce();
+      expect(result).toEqual(SUCCESS_RESULT);
+    });
+
+    it("falls back to Cloudflare when Gemini's parse_failure is followed by Qwen ALSO returning a parse_failure", async () => {
+      invokeGeminiMock.mockResolvedValueOnce(PARSE_FAILURE_RESULT);
+      invokeQwenMock.mockResolvedValueOnce({ ...PARSE_FAILURE_RESULT, reason: "Qwen: missing required fields" });
+      invokeCloudflareMock.mockResolvedValueOnce(SUCCESS_RESULT);
+
+      const result = await invokeSkill(CONTEXT);
+
+      expect(invokeGeminiMock).toHaveBeenCalledOnce();
+      expect(invokeQwenMock).toHaveBeenCalledOnce();
       expect(invokeCloudflareMock).toHaveBeenCalledOnce();
       expect(result).toEqual(SUCCESS_RESULT);
     });
 
-    it("mixes a returned parse_failure (Qwen) with a thrown error (Ox Alpha) correctly", async () => {
-      invokeQwenMock.mockResolvedValueOnce(PARSE_FAILURE_RESULT);
-      invokeOxAlphaMock.mockRejectedValueOnce(new Error("Ox Alpha: 503"));
+    it("mixes a returned parse_failure (Gemini) with a thrown error (Qwen) correctly", async () => {
+      invokeGeminiMock.mockResolvedValueOnce(PARSE_FAILURE_RESULT);
+      invokeQwenMock.mockRejectedValueOnce(new Error("Qwen: 503"));
       invokeCloudflareMock.mockResolvedValueOnce(SUCCESS_RESULT);
 
       const result = await invokeSkill(CONTEXT);
@@ -336,8 +336,8 @@ describe("invokeSkill — Qwen -> Ox Alpha -> Cloudflare chain", () => {
     });
 
     it("returns Cloudflare's OWN parse_failure directly, unescalated — Cloudflare is the terminal stage", async () => {
+      invokeGeminiMock.mockResolvedValueOnce(PARSE_FAILURE_RESULT);
       invokeQwenMock.mockResolvedValueOnce(PARSE_FAILURE_RESULT);
-      invokeOxAlphaMock.mockResolvedValueOnce(PARSE_FAILURE_RESULT);
       const cloudflareParseFailure = { ...PARSE_FAILURE_RESULT, reason: "Cloudflare: unparseable extraction output" };
       invokeCloudflareMock.mockResolvedValueOnce(cloudflareParseFailure);
 
@@ -355,23 +355,23 @@ describe("invokeSkill — Qwen -> Ox Alpha -> Cloudflare chain", () => {
           recommendedReply: { kind: "do_not_reply_yet" as const, reason: "client asked to think it over", trigger: "client replies again" },
         },
       };
-      invokeQwenMock.mockResolvedValueOnce(doNotReplyResult);
+      invokeGeminiMock.mockResolvedValueOnce(doNotReplyResult);
 
       const result = await invokeSkill(CONTEXT);
 
-      expect(invokeOxAlphaMock).not.toHaveBeenCalled();
+      expect(invokeQwenMock).not.toHaveBeenCalled();
       expect(invokeCloudflareMock).not.toHaveBeenCalled();
       expect(result).toEqual(doNotReplyResult);
     });
 
-    it("skips straight to Cloudflare on a Qwen parse_failure when Ox Alpha credentials are unset", async () => {
-      delete process.env.OPENROUTER_API_KEY;
-      invokeQwenMock.mockResolvedValueOnce(PARSE_FAILURE_RESULT);
+    it("skips straight to Cloudflare on a Gemini parse_failure when Qwen credentials are unset", async () => {
+      delete process.env.QWEN_API_KEY;
+      invokeGeminiMock.mockResolvedValueOnce(PARSE_FAILURE_RESULT);
       invokeCloudflareMock.mockResolvedValueOnce(SUCCESS_RESULT);
 
       const result = await invokeSkill(CONTEXT);
 
-      expect(invokeOxAlphaMock).not.toHaveBeenCalled();
+      expect(invokeQwenMock).not.toHaveBeenCalled();
       expect(invokeCloudflareMock).toHaveBeenCalledOnce();
       expect(result).toEqual(SUCCESS_RESULT);
     });
