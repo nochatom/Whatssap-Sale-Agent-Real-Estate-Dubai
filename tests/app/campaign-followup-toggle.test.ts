@@ -155,6 +155,56 @@ describe("PATCH /api/campaigns/[id]", () => {
     expect(campaignUpdate).not.toHaveBeenCalled();
   });
 
+  it("accepts status alongside the required toggle and activates a DRAFT campaign", async () => {
+    campaignUpdate.mockResolvedValue({ id: "camp_1", campaignFollowUpEnabled: true, status: "ACTIVE" });
+
+    const res = await PATCH(makeRequest({ campaignFollowUpEnabled: true, status: "ACTIVE" }), {
+      params: Promise.resolve({ id: "camp_1" }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(campaignUpdate).toHaveBeenCalledWith({
+      where: { id: "camp_1" },
+      data: { campaignFollowUpEnabled: true, status: "ACTIVE" },
+    });
+  });
+
+  it("omits status from the update when the caller doesn't send it (leaves it untouched)", async () => {
+    campaignUpdate.mockResolvedValue({ id: "camp_1", campaignFollowUpEnabled: true });
+
+    await PATCH(makeRequest({ campaignFollowUpEnabled: true }), {
+      params: Promise.resolve({ id: "camp_1" }),
+    });
+
+    expect(campaignUpdate).toHaveBeenCalledWith({
+      where: { id: "camp_1" },
+      data: { campaignFollowUpEnabled: true },
+    });
+  });
+
+  it("400s when status is not a recognized CampaignStatus value", async () => {
+    const res = await PATCH(makeRequest({ campaignFollowUpEnabled: true, status: "LIVE" }), {
+      params: Promise.resolve({ id: "camp_1" }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(campaignUpdate).not.toHaveBeenCalled();
+  });
+
+  it.each(["DRAFT", "ACTIVE", "PAUSED", "ARCHIVED"])("accepts status=%s", async (status) => {
+    campaignUpdate.mockResolvedValue({ id: "camp_1", campaignFollowUpEnabled: true, status });
+
+    const res = await PATCH(makeRequest({ campaignFollowUpEnabled: true, status }), {
+      params: Promise.resolve({ id: "camp_1" }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(campaignUpdate).toHaveBeenCalledWith({
+      where: { id: "camp_1" },
+      data: { campaignFollowUpEnabled: true, status },
+    });
+  });
+
   it("400s on invalid JSON", async () => {
     const res = await PATCH(makeInvalidJsonRequest(), { params: Promise.resolve({ id: "camp_1" }) });
 

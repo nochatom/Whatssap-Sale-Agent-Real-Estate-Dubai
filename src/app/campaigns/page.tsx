@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { prisma } from "@/lib/prisma";
 import Badge from "../_components/Badge";
+import CampaignStatusButton from "../_components/CampaignStatusButton";
 import CopyButton from "../_components/CopyButton";
 import DeleteCampaignButton from "../_components/DeleteCampaignButton";
 import SyncTemplateButton from "../_components/SyncTemplateButton";
@@ -89,6 +90,7 @@ export default async function CampaignsPage() {
                 </td>
                 <td align="right">
                   <div style={{ display: "flex", alignItems: "center", gap: space.xxs, justifyContent: "flex-end" }}>
+                    <CampaignStatusButton id={camp.id} status={camp.status} campaignFollowUpEnabled={camp.campaignFollowUpEnabled} />
                     <ToggleFollowUpButton id={camp.id} enabled={camp.campaignFollowUpEnabled} />
                     <DeleteCampaignButton id={camp.id} name={camp.name} />
                   </div>

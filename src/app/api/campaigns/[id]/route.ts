@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { CampaignStatus } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { prismaErrorResponse } from "@/lib/prisma-errors";
+
+const VALID_CAMPAIGN_STATUSES: CampaignStatus[] = ["DRAFT", "ACTIVE", "PAUSED", "ARCHIVED"];
 
 interface PatchBody {
   /**
@@ -22,6 +25,15 @@ interface PatchBody {
    * hardcoded interval and doesn't read this field at all.
    */
   followUpDelayMinutes?: number | null;
+  /**
+   * Campaign.status — DRAFT | ACTIVE | PAUSED | ARCHIVED. Optional: omit to
+   * leave unchanged. There was previously no way at all to change this
+   * after creation (the create form's dropdown was the only place it could
+   * ever be set), which silently blocked every send from a campaign left
+   * in DRAFT — checkCampaignActive in src/compliance/checks.ts requires
+   * exactly "ACTIVE". This lets the "Activate"/"Pause" button correct that.
+   */
+  status?: CampaignStatus;
 }
 
 /**
@@ -56,12 +68,20 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     followUpDelayMinutes = value;
   }
 
+  if ("status" in body && !VALID_CAMPAIGN_STATUSES.includes(body.status as CampaignStatus)) {
+    return NextResponse.json(
+      { error: `status must be one of: ${VALID_CAMPAIGN_STATUSES.join(", ")}` },
+      { status: 400 },
+    );
+  }
+
   try {
     const campaign = await prisma.campaign.update({
       where: { id },
       data: {
         campaignFollowUpEnabled: body.campaignFollowUpEnabled,
         ...(followUpDelayMinutes !== undefined ? { followUpDelayMinutes } : {}),
+        ...(body.status !== undefined ? { status: body.status } : {}),
       },
     });
     return NextResponse.json({ campaign });
