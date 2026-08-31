@@ -215,6 +215,7 @@ export default function ImportClient({ campaigns }: { campaigns: { id: string; n
               Default country
               <select value={defaultCountry} onChange={(e) => setDefaultCountry(e.target.value)} style={{ ...fieldInput, display: "block", marginTop: 4, width: 160 }}>
                 <option value="AE">UAE (+971)</option>
+                <option value="US">USA (+1)</option>
                 <option value="SA">Saudi Arabia (+966)</option>
                 <option value="EG">Egypt (+20)</option>
                 <option value="DZ">Algeria (+213)</option>
