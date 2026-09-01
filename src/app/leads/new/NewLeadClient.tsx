@@ -101,6 +101,7 @@ export default function NewLeadClient({ campaigns }: { campaigns: { id: string; 
               >
                 <option value="">— select —</option>
                 <option value="AE">UAE (+971)</option>
+                <option value="US">USA (+1)</option>
                 <option value="SA">Saudi Arabia (+966)</option>
                 <option value="EG">Egypt (+20)</option>
                 <option value="DZ">Algeria (+213)</option>
