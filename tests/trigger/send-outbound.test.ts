@@ -268,6 +268,19 @@ describe("sendOutbound", () => {
       expect(sendTemplateMessageMock).not.toHaveBeenCalled();
     });
 
+    it("blocks and never calls sendTemplateMessage when the recipient is a toll-free number", async () => {
+      leadFindUniqueOrThrow.mockResolvedValue({
+        id: "lead_1",
+        phoneE164: "+18005440300",
+        optedIn: true,
+      });
+
+      const result = await sendOutbound(TEMPLATE_PAYLOAD);
+
+      expect(result).toEqual({ sent: false, blockedBy: "toll_free_number" });
+      expect(sendTemplateMessageMock).not.toHaveBeenCalled();
+    });
+
     it("passes the service-window check for a template send with no prior inbound message", async () => {
       conversationFindUniqueOrThrow.mockResolvedValue({ id: "conv_1", lastInboundAt: null });
       sendTemplateMessageMock.mockResolvedValue({ waMessageId: "wamid.TPL1" });

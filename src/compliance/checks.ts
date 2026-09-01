@@ -1,4 +1,5 @@
 import type { Campaign, Conversation, Lead } from "@prisma/client";
+import { parsePhoneNumberFromString } from "libphonenumber-js";
 
 import { prisma } from "@/lib/prisma";
 
@@ -8,7 +9,8 @@ export type ComplianceFailure =
   | "campaign_inactive"
   | "idempotency_conflict"
   | "service_window_closed"
-  | "template_not_approved";
+  | "template_not_approved"
+  | "toll_free_number";
 
 export interface ComplianceGateResult {
   passed: boolean;
@@ -22,6 +24,27 @@ export async function checkSuppression(phoneE164: string): Promise<boolean> {
 
 export function checkOptOutFlag(lead: Pick<Lead, "optedIn">): boolean {
   return lead.optedIn === true;
+}
+
+/**
+ * Toll-free numbers (800/833/844/855/866/877/888 in the North American
+ * Numbering Plan) are call-center/IVR infrastructure, never a personal
+ * device — they cannot have a WhatsApp account. Confirmed via a real
+ * production incident (2026-09-01): a campaign of 40 sends included 14
+ * toll-free numbers, all accepted by Meta's API (real message ids
+ * returned) but none ever delivered, since there was no WhatsApp client on
+ * the other end. libphonenumber-js's line-type classification is free,
+ * local, and deterministic for this — no external lookup needed.
+ *
+ * Scoped to template sends only, the same way checkServiceWindow is scoped
+ * in reverse: a toll-free number could never have replied to reach an
+ * organic free-text conversation in the first place, so this only matters
+ * for cold campaign-opener sends.
+ */
+export function checkNotTollFree(phoneE164: string, isTemplate: boolean): boolean {
+  if (!isTemplate) return true;
+  const parsed = parsePhoneNumberFromString(phoneE164);
+  return parsed?.getType() !== "TOLL_FREE";
 }
 
 /**
@@ -100,6 +123,9 @@ export async function runComplianceGate(
   }
   if (!checkOptOutFlag(params.lead)) {
     return { passed: false, failedCheck: "opt_out" };
+  }
+  if (!checkNotTollFree(params.phoneE164, params.isTemplate)) {
+    return { passed: false, failedCheck: "toll_free_number" };
   }
   if (!checkCampaignActive(params.campaign)) {
     return { passed: false, failedCheck: "campaign_inactive" };

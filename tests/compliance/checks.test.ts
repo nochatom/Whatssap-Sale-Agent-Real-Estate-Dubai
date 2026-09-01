@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { checkCampaignActive, checkServiceWindow, checkTemplateApproval } from "@/compliance/checks";
+import { checkCampaignActive, checkNotTollFree, checkServiceWindow, checkTemplateApproval } from "@/compliance/checks";
 
 describe("checkTemplateApproval", () => {
   it("passes non-template sends regardless of template status", () => {
@@ -30,6 +30,31 @@ describe("checkServiceWindow (template interaction)", () => {
 
   it("still requires an open window for a free-text send", () => {
     expect(checkServiceWindow({ lastInboundAt: null }, false)).toBe(false);
+  });
+});
+
+describe("checkNotTollFree", () => {
+  it("blocks a template send to a North American toll-free number", () => {
+    expect(checkNotTollFree("+18005440300", true)).toBe(false); // 800
+    expect(checkNotTollFree("+18778181014", true)).toBe(false); // 877
+    expect(checkNotTollFree("+18889194987", true)).toBe(false); // 888
+    expect(checkNotTollFree("+18559817557", true)).toBe(false); // 855
+    expect(checkNotTollFree("+18669767530", true)).toBe(false); // 866
+  });
+
+  it("passes a template send to an ordinary geographic number", () => {
+    expect(checkNotTollFree("+14243728268", true)).toBe(true);
+    expect(checkNotTollFree("+13053912222", true)).toBe(true);
+  });
+
+  it("never blocks a non-template (free-text/AI reply) send, even to a toll-free number", () => {
+    // A toll-free number could never have replied to reach an organic
+    // conversation in the first place, but this proves the scoping anyway.
+    expect(checkNotTollFree("+18005440300", false)).toBe(true);
+  });
+
+  it("passes (fails open) on an unparseable number rather than blocking on a formatting issue", () => {
+    expect(checkNotTollFree("not-a-real-number", true)).toBe(true);
   });
 });
 
