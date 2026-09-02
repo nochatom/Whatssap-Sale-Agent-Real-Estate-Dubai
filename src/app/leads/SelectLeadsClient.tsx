@@ -20,9 +20,12 @@ type OptedInFilter = "all" | "opted-in" | "not-opted-in";
 
 /**
  * Dedicated to display/search/filter/select — no CSV import, no sending.
- * Selection is passed to /leads/send via a URL query param so the flow
- * survives refresh/back-button, and the Send page can be reached directly
- * without JS state (no client-side store needed).
+ * Selection is passed to /leads/send via sessionStorage (SendLeadsLoader.tsx
+ * reads it back out) so the flow still survives refresh/back-button without
+ * a server-side store, but without the URL-length ceiling a query param hit
+ * once selections grew past ~a couple hundred leads (cuids are 25 chars
+ * each) — confirmed as the cause of large-campaign sends silently failing
+ * to reach the Send page.
  */
 export default function SelectLeadsClient() {
   const router = useRouter();
@@ -88,7 +91,8 @@ export default function SelectLeadsClient() {
 
   function goToSend() {
     const ids = Array.from(selected);
-    router.push(`/leads/send?leadIds=${ids.map(encodeURIComponent).join(",")}`);
+    sessionStorage.setItem("selectedLeadIds", JSON.stringify(ids));
+    router.push("/leads/send");
   }
 
   /**
