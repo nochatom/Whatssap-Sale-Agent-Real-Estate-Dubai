@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const invokeCloudflareMock = vi.fn();
 const invokeQwenMock = vi.fn();
 const invokeGeminiMock = vi.fn();
+const invokeGrokMock = vi.fn();
 
 vi.mock("@/skill/providers/cloudflare", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/skill/providers/cloudflare")>();
@@ -18,6 +19,10 @@ vi.mock("@/skill/providers/qwen", () => ({
 
 vi.mock("@/skill/providers/gemini", () => ({
   invokeGemini: (...args: unknown[]) => invokeGeminiMock(...args),
+}));
+
+vi.mock("@/skill/providers/xai", () => ({
+  invokeGrok: (...args: unknown[]) => invokeGrokMock(...args),
 }));
 
 const { invokeSkill, isRetryableProviderUnavailable, nextCloudflareQuotaResetAt } = await import("@/skill/invoke");
@@ -50,6 +55,7 @@ const SUCCESS_RESULT = {
 };
 
 const originalAiProvider = process.env.AI_PROVIDER;
+const originalXaiKey = process.env.XAI_API_KEY;
 const originalQwenKey = process.env.QWEN_API_KEY;
 const originalCloudflareAccountId = process.env.CLOUDFLARE_ACCOUNT_ID;
 const originalCloudflareApiToken = process.env.CLOUDFLARE_API_TOKEN;
@@ -59,6 +65,8 @@ beforeEach(() => {
   invokeCloudflareMock.mockReset();
   invokeQwenMock.mockReset();
   invokeGeminiMock.mockReset();
+  invokeGrokMock.mockReset();
+  process.env.XAI_API_KEY = "test-xai-key";
   process.env.QWEN_API_KEY = "test-qwen-key";
   process.env.CLOUDFLARE_ACCOUNT_ID = "test-account-id";
   process.env.CLOUDFLARE_API_TOKEN = "test-api-token";
@@ -68,6 +76,8 @@ beforeEach(() => {
 afterEach(() => {
   if (originalAiProvider === undefined) delete process.env.AI_PROVIDER;
   else process.env.AI_PROVIDER = originalAiProvider;
+  if (originalXaiKey === undefined) delete process.env.XAI_API_KEY;
+  else process.env.XAI_API_KEY = originalXaiKey;
   if (originalQwenKey === undefined) delete process.env.QWEN_API_KEY;
   else process.env.QWEN_API_KEY = originalQwenKey;
   if (originalCloudflareAccountId === undefined) delete process.env.CLOUDFLARE_ACCOUNT_ID;
@@ -79,53 +89,56 @@ afterEach(() => {
 });
 
 describe("invokeSkill — AI_PROVIDER is ignored entirely (the actual bug fix)", () => {
-  it("still tries Gemini first when AI_PROVIDER=cloudflare — the exact production misconfiguration this fixes", async () => {
+  it("still tries Grok first when AI_PROVIDER=cloudflare — the exact production misconfiguration this fixes", async () => {
     process.env.AI_PROVIDER = "cloudflare";
-    invokeGeminiMock.mockResolvedValueOnce(SUCCESS_RESULT);
+    invokeGrokMock.mockResolvedValueOnce(SUCCESS_RESULT);
 
     const result = await invokeSkill(CONTEXT);
 
-    expect(invokeGeminiMock).toHaveBeenCalledOnce();
+    expect(invokeGrokMock).toHaveBeenCalledOnce();
+    expect(invokeGeminiMock).not.toHaveBeenCalled();
     expect(invokeCloudflareMock).not.toHaveBeenCalled();
     expect(invokeQwenMock).not.toHaveBeenCalled();
     expect(result).toEqual(SUCCESS_RESULT);
   });
 
-  it("still tries Gemini first when AI_PROVIDER=qwen", async () => {
+  it("still tries Grok first when AI_PROVIDER=qwen", async () => {
     process.env.AI_PROVIDER = "qwen";
-    invokeGeminiMock.mockResolvedValueOnce(SUCCESS_RESULT);
+    invokeGrokMock.mockResolvedValueOnce(SUCCESS_RESULT);
 
     await invokeSkill(CONTEXT);
 
-    expect(invokeGeminiMock).toHaveBeenCalledOnce();
+    expect(invokeGrokMock).toHaveBeenCalledOnce();
   });
 
-  it("still tries Gemini first when AI_PROVIDER is unset", async () => {
+  it("still tries Grok first when AI_PROVIDER is unset", async () => {
     delete process.env.AI_PROVIDER;
-    invokeGeminiMock.mockResolvedValueOnce(SUCCESS_RESULT);
+    invokeGrokMock.mockResolvedValueOnce(SUCCESS_RESULT);
 
     await invokeSkill(CONTEXT);
 
-    expect(invokeGeminiMock).toHaveBeenCalledOnce();
+    expect(invokeGrokMock).toHaveBeenCalledOnce();
   });
 
-  it("still tries Gemini first when AI_PROVIDER is an unrecognized/garbage value", async () => {
+  it("still tries Grok first when AI_PROVIDER is an unrecognized/garbage value", async () => {
     process.env.AI_PROVIDER = "some-garbage-value";
-    invokeGeminiMock.mockResolvedValueOnce(SUCCESS_RESULT);
+    invokeGrokMock.mockResolvedValueOnce(SUCCESS_RESULT);
 
     await invokeSkill(CONTEXT);
 
-    expect(invokeGeminiMock).toHaveBeenCalledOnce();
+    expect(invokeGrokMock).toHaveBeenCalledOnce();
   });
 
   it("falls all the way to Cloudflare even when AI_PROVIDER=cloudflare — no early exit to a single named provider", async () => {
     process.env.AI_PROVIDER = "cloudflare";
+    invokeGrokMock.mockRejectedValueOnce(new Error("Grok: 503"));
     invokeGeminiMock.mockRejectedValueOnce(new Error("Gemini: 503"));
     invokeQwenMock.mockRejectedValueOnce(new Error("Qwen: 503"));
     invokeCloudflareMock.mockResolvedValueOnce(SUCCESS_RESULT);
 
     const result = await invokeSkill(CONTEXT);
 
+    expect(invokeGrokMock).toHaveBeenCalledOnce();
     expect(invokeGeminiMock).toHaveBeenCalledOnce();
     expect(invokeQwenMock).toHaveBeenCalledOnce();
     expect(invokeCloudflareMock).toHaveBeenCalledOnce();
@@ -133,47 +146,65 @@ describe("invokeSkill — AI_PROVIDER is ignored entirely (the actual bug fix)",
   });
 });
 
-describe("invokeSkill — Gemini -> Qwen -> Cloudflare chain", () => {
-  it("returns Gemini's result directly when it succeeds — Qwen and Cloudflare never called", async () => {
-    invokeGeminiMock.mockResolvedValueOnce(SUCCESS_RESULT);
+describe("invokeSkill — Grok -> Gemini -> Qwen -> Cloudflare chain", () => {
+  it("returns Grok's result directly when it succeeds — nothing else called", async () => {
+    invokeGrokMock.mockResolvedValueOnce(SUCCESS_RESULT);
 
     const result = await invokeSkill(CONTEXT);
 
     expect(result).toEqual(SUCCESS_RESULT);
+    expect(invokeGeminiMock).not.toHaveBeenCalled();
     expect(invokeQwenMock).not.toHaveBeenCalled();
     expect(invokeCloudflareMock).not.toHaveBeenCalled();
   });
 
-  it("falls back to Qwen on ANY Gemini error — not just a specific error type", async () => {
-    invokeGeminiMock.mockRejectedValueOnce(new Error("Gemini: 429 rate limited"));
+  it("falls back to Gemini on ANY Grok error — not just a specific error type", async () => {
+    invokeGrokMock.mockRejectedValueOnce(new Error("Grok: 429 rate limited"));
+    invokeGeminiMock.mockResolvedValueOnce(SUCCESS_RESULT);
+
+    const result = await invokeSkill(CONTEXT);
+
+    expect(invokeGeminiMock).toHaveBeenCalledOnce();
+    expect(invokeQwenMock).not.toHaveBeenCalled();
+    expect(invokeCloudflareMock).not.toHaveBeenCalled();
+    expect(result).toEqual(SUCCESS_RESULT);
+  });
+
+  it("falls back to Gemini with the identical context and Skill markdown Grok received", async () => {
+    invokeGrokMock.mockRejectedValueOnce(new Error("Grok: timeout"));
+    invokeGeminiMock.mockResolvedValueOnce(SUCCESS_RESULT);
+
+    await invokeSkill(CONTEXT);
+
+    const [grokContext, grokSkillMarkdown] = invokeGrokMock.mock.calls[0] ?? [];
+    const [geminiContext, geminiSkillMarkdown] = invokeGeminiMock.mock.calls[0] ?? [];
+    expect(geminiContext).toEqual(grokContext);
+    expect(geminiSkillMarkdown).toBe(grokSkillMarkdown);
+  });
+
+  it("falls back to Qwen when both Grok and Gemini fail", async () => {
+    invokeGrokMock.mockRejectedValueOnce(new Error("Grok: 503"));
+    invokeGeminiMock.mockRejectedValueOnce(new Error("Gemini: 503"));
     invokeQwenMock.mockResolvedValueOnce(SUCCESS_RESULT);
 
     const result = await invokeSkill(CONTEXT);
 
+    expect(invokeGrokMock).toHaveBeenCalledOnce();
+    expect(invokeGeminiMock).toHaveBeenCalledOnce();
     expect(invokeQwenMock).toHaveBeenCalledOnce();
     expect(invokeCloudflareMock).not.toHaveBeenCalled();
     expect(result).toEqual(SUCCESS_RESULT);
   });
 
-  it("falls back to Qwen with the identical context and Skill markdown Gemini received", async () => {
-    invokeGeminiMock.mockRejectedValueOnce(new Error("Gemini: timeout"));
-    invokeQwenMock.mockResolvedValueOnce(SUCCESS_RESULT);
-
-    await invokeSkill(CONTEXT);
-
-    const [geminiContext, geminiSkillMarkdown] = invokeGeminiMock.mock.calls[0] ?? [];
-    const [qwenContext, qwenSkillMarkdown] = invokeQwenMock.mock.calls[0] ?? [];
-    expect(qwenContext).toEqual(geminiContext);
-    expect(qwenSkillMarkdown).toBe(geminiSkillMarkdown);
-  });
-
-  it("falls all the way to Cloudflare when both Gemini and Qwen fail", async () => {
+  it("falls all the way to Cloudflare when Grok, Gemini, and Qwen all fail", async () => {
+    invokeGrokMock.mockRejectedValueOnce(new Error("Grok: 503"));
     invokeGeminiMock.mockRejectedValueOnce(new Error("Gemini: 503"));
     invokeQwenMock.mockRejectedValueOnce(new Error("Qwen: 503"));
     invokeCloudflareMock.mockResolvedValueOnce(SUCCESS_RESULT);
 
     const result = await invokeSkill(CONTEXT);
 
+    expect(invokeGrokMock).toHaveBeenCalledOnce();
     expect(invokeGeminiMock).toHaveBeenCalledOnce();
     expect(invokeQwenMock).toHaveBeenCalledOnce();
     expect(invokeCloudflareMock).toHaveBeenCalledOnce();
@@ -181,6 +212,7 @@ describe("invokeSkill — Gemini -> Qwen -> Cloudflare chain", () => {
   });
 
   it("falls back to Cloudflare with the identical context and Skill markdown Qwen received", async () => {
+    invokeGrokMock.mockRejectedValueOnce(new Error("Grok: 503"));
     invokeGeminiMock.mockRejectedValueOnce(new Error("Gemini: 503"));
     invokeQwenMock.mockRejectedValueOnce(new Error("Qwen: timeout"));
     invokeCloudflareMock.mockResolvedValueOnce(SUCCESS_RESULT);
@@ -193,19 +225,34 @@ describe("invokeSkill — Gemini -> Qwen -> Cloudflare chain", () => {
     expect(cfSkillMarkdown).toBe(qwenSkillMarkdown);
   });
 
-  it("skips straight to Cloudflare when Gemini fails and Qwen credentials are unset", async () => {
+  it("skips straight to Qwen when Grok fails and Gemini credentials are unset", async () => {
+    delete process.env.GEMINI_API_KEY;
+    invokeGrokMock.mockRejectedValueOnce(new Error("Grok: 429"));
+    invokeQwenMock.mockResolvedValueOnce(SUCCESS_RESULT);
+
+    const result = await invokeSkill(CONTEXT);
+
+    expect(invokeGeminiMock).not.toHaveBeenCalled();
+    expect(invokeQwenMock).toHaveBeenCalledOnce();
+    expect(result).toEqual(SUCCESS_RESULT);
+  });
+
+  it("skips straight to Cloudflare when Grok fails, Gemini credentials are unset, and Qwen credentials are unset", async () => {
+    delete process.env.GEMINI_API_KEY;
     delete process.env.QWEN_API_KEY;
-    invokeGeminiMock.mockRejectedValueOnce(new Error("Gemini: 429"));
+    invokeGrokMock.mockRejectedValueOnce(new Error("Grok: 429"));
     invokeCloudflareMock.mockResolvedValueOnce(SUCCESS_RESULT);
 
     const result = await invokeSkill(CONTEXT);
 
+    expect(invokeGeminiMock).not.toHaveBeenCalled();
     expect(invokeQwenMock).not.toHaveBeenCalled();
     expect(invokeCloudflareMock).toHaveBeenCalledOnce();
     expect(result).toEqual(SUCCESS_RESULT);
   });
 
-  it("does NOT invent a reply when all three fail", async () => {
+  it("does NOT invent a reply when all four fail", async () => {
+    invokeGrokMock.mockRejectedValueOnce(new Error("Grok: 503"));
     invokeGeminiMock.mockRejectedValueOnce(new Error("Gemini: 503"));
     invokeQwenMock.mockRejectedValueOnce(new Error("Qwen: 503"));
     invokeCloudflareMock.mockRejectedValueOnce(new Error("Cloudflare: bad config"));
@@ -222,6 +269,7 @@ describe("invokeSkill — Gemini -> Qwen -> Cloudflare chain", () => {
   it("does NOT invent a reply when Cloudflare credentials are unset at the terminal stage", async () => {
     delete process.env.CLOUDFLARE_ACCOUNT_ID;
     delete process.env.CLOUDFLARE_API_TOKEN;
+    invokeGrokMock.mockRejectedValueOnce(new Error("Grok: 503"));
     invokeGeminiMock.mockRejectedValueOnce(new Error("Gemini: 503"));
     invokeQwenMock.mockRejectedValueOnce(new Error("Qwen: 503"));
 
@@ -234,7 +282,8 @@ describe("invokeSkill — Gemini -> Qwen -> Cloudflare chain", () => {
     }
   });
 
-  it("marks a triple-failure as retryable when Cloudflare's own failure is specifically quota-exceeded", async () => {
+  it("marks a four-way failure as retryable when Cloudflare's own failure is specifically quota-exceeded", async () => {
+    invokeGrokMock.mockRejectedValueOnce(new Error("Grok: 503"));
     invokeGeminiMock.mockRejectedValueOnce(new Error("Gemini: 503"));
     invokeQwenMock.mockRejectedValueOnce(new Error("Qwen: 503"));
     invokeCloudflareMock.mockRejectedValueOnce(new CloudflareQuotaExceededError(new Error("429")));
@@ -244,7 +293,8 @@ describe("invokeSkill — Gemini -> Qwen -> Cloudflare chain", () => {
     expect(isRetryableProviderUnavailable(result)).toBe(true);
   });
 
-  it("does NOT mark a triple-failure as retryable when Cloudflare's failure is not quota-related", async () => {
+  it("does NOT mark a four-way failure as retryable when Cloudflare's failure is not quota-related", async () => {
+    invokeGrokMock.mockRejectedValueOnce(new Error("Grok: 503"));
     invokeGeminiMock.mockRejectedValueOnce(new Error("Gemini: 503"));
     invokeQwenMock.mockRejectedValueOnce(new Error("Qwen: 503"));
     invokeCloudflareMock.mockRejectedValueOnce(new Error("Cloudflare: bad config"));
@@ -264,32 +314,34 @@ describe("invokeSkill — Gemini -> Qwen -> Cloudflare chain", () => {
     ).toBe(false);
   });
 
-  it("always restarts at Gemini on the next call, regardless of what the previous call fell back to", async () => {
-    invokeGeminiMock.mockRejectedValueOnce(new Error("Gemini: 429"));
-    invokeQwenMock.mockResolvedValueOnce(SUCCESS_RESULT);
+  it("always restarts at Grok on the next call, regardless of what the previous call fell back to", async () => {
+    invokeGrokMock.mockRejectedValueOnce(new Error("Grok: 429"));
+    invokeGeminiMock.mockResolvedValueOnce(SUCCESS_RESULT);
     const first = await invokeSkill(CONTEXT);
     expect(first).toEqual(SUCCESS_RESULT);
+    expect(invokeGrokMock).toHaveBeenCalledTimes(1);
     expect(invokeGeminiMock).toHaveBeenCalledTimes(1);
-    expect(invokeQwenMock).toHaveBeenCalledTimes(1);
 
-    invokeGeminiMock.mockResolvedValueOnce(SUCCESS_RESULT);
+    invokeGrokMock.mockResolvedValueOnce(SUCCESS_RESULT);
     const second = await invokeSkill(CONTEXT);
     expect(second).toEqual(SUCCESS_RESULT);
-    expect(invokeGeminiMock).toHaveBeenCalledTimes(2);
-    expect(invokeQwenMock).toHaveBeenCalledTimes(1); // not called again on the second request
+    expect(invokeGrokMock).toHaveBeenCalledTimes(2);
+    expect(invokeGeminiMock).toHaveBeenCalledTimes(1); // not called again on the second request
   });
 
-  it("even after falling all the way to Cloudflare, the next independent request still starts at Gemini", async () => {
+  it("even after falling all the way to Cloudflare, the next independent request still starts at Grok", async () => {
+    invokeGrokMock.mockRejectedValueOnce(new Error("Grok: 503"));
     invokeGeminiMock.mockRejectedValueOnce(new Error("Gemini: 503"));
     invokeQwenMock.mockRejectedValueOnce(new Error("Qwen: 503"));
     invokeCloudflareMock.mockResolvedValueOnce(SUCCESS_RESULT);
     const first = await invokeSkill(CONTEXT);
     expect(first).toEqual(SUCCESS_RESULT);
 
-    invokeGeminiMock.mockResolvedValueOnce(SUCCESS_RESULT);
+    invokeGrokMock.mockResolvedValueOnce(SUCCESS_RESULT);
     const second = await invokeSkill(CONTEXT);
     expect(second).toEqual(SUCCESS_RESULT);
-    expect(invokeGeminiMock).toHaveBeenCalledTimes(2);
+    expect(invokeGrokMock).toHaveBeenCalledTimes(2);
+    expect(invokeGeminiMock).toHaveBeenCalledTimes(1);
     expect(invokeQwenMock).toHaveBeenCalledTimes(1);
     expect(invokeCloudflareMock).toHaveBeenCalledTimes(1);
   });
@@ -301,8 +353,32 @@ describe("invokeSkill — Gemini -> Qwen -> Cloudflare chain", () => {
       rawOutput: "not valid json",
     };
 
-    it("falls back to Qwen when Gemini RETURNS a parse_failure (no throw)", async () => {
-      invokeGeminiMock.mockResolvedValueOnce(PARSE_FAILURE_RESULT);
+    it("falls back to Gemini when Grok RETURNS a parse_failure (no throw)", async () => {
+      invokeGrokMock.mockResolvedValueOnce(PARSE_FAILURE_RESULT);
+      invokeGeminiMock.mockResolvedValueOnce(SUCCESS_RESULT);
+
+      const result = await invokeSkill(CONTEXT);
+
+      expect(invokeGeminiMock).toHaveBeenCalledOnce();
+      expect(result).toEqual(SUCCESS_RESULT);
+    });
+
+    it("falls back to Qwen when Grok's parse_failure is followed by Gemini ALSO returning a parse_failure", async () => {
+      invokeGrokMock.mockResolvedValueOnce(PARSE_FAILURE_RESULT);
+      invokeGeminiMock.mockResolvedValueOnce({ ...PARSE_FAILURE_RESULT, reason: "Gemini: missing required fields" });
+      invokeQwenMock.mockResolvedValueOnce(SUCCESS_RESULT);
+
+      const result = await invokeSkill(CONTEXT);
+
+      expect(invokeGrokMock).toHaveBeenCalledOnce();
+      expect(invokeGeminiMock).toHaveBeenCalledOnce();
+      expect(invokeQwenMock).toHaveBeenCalledOnce();
+      expect(result).toEqual(SUCCESS_RESULT);
+    });
+
+    it("mixes a returned parse_failure (Grok) with a thrown error (Gemini) correctly", async () => {
+      invokeGrokMock.mockResolvedValueOnce(PARSE_FAILURE_RESULT);
+      invokeGeminiMock.mockRejectedValueOnce(new Error("Gemini: 503"));
       invokeQwenMock.mockResolvedValueOnce(SUCCESS_RESULT);
 
       const result = await invokeSkill(CONTEXT);
@@ -311,31 +387,8 @@ describe("invokeSkill — Gemini -> Qwen -> Cloudflare chain", () => {
       expect(result).toEqual(SUCCESS_RESULT);
     });
 
-    it("falls back to Cloudflare when Gemini's parse_failure is followed by Qwen ALSO returning a parse_failure", async () => {
-      invokeGeminiMock.mockResolvedValueOnce(PARSE_FAILURE_RESULT);
-      invokeQwenMock.mockResolvedValueOnce({ ...PARSE_FAILURE_RESULT, reason: "Qwen: missing required fields" });
-      invokeCloudflareMock.mockResolvedValueOnce(SUCCESS_RESULT);
-
-      const result = await invokeSkill(CONTEXT);
-
-      expect(invokeGeminiMock).toHaveBeenCalledOnce();
-      expect(invokeQwenMock).toHaveBeenCalledOnce();
-      expect(invokeCloudflareMock).toHaveBeenCalledOnce();
-      expect(result).toEqual(SUCCESS_RESULT);
-    });
-
-    it("mixes a returned parse_failure (Gemini) with a thrown error (Qwen) correctly", async () => {
-      invokeGeminiMock.mockResolvedValueOnce(PARSE_FAILURE_RESULT);
-      invokeQwenMock.mockRejectedValueOnce(new Error("Qwen: 503"));
-      invokeCloudflareMock.mockResolvedValueOnce(SUCCESS_RESULT);
-
-      const result = await invokeSkill(CONTEXT);
-
-      expect(invokeCloudflareMock).toHaveBeenCalledOnce();
-      expect(result).toEqual(SUCCESS_RESULT);
-    });
-
     it("returns Cloudflare's OWN parse_failure directly, unescalated — Cloudflare is the terminal stage", async () => {
+      invokeGrokMock.mockResolvedValueOnce(PARSE_FAILURE_RESULT);
       invokeGeminiMock.mockResolvedValueOnce(PARSE_FAILURE_RESULT);
       invokeQwenMock.mockResolvedValueOnce(PARSE_FAILURE_RESULT);
       const cloudflareParseFailure = { ...PARSE_FAILURE_RESULT, reason: "Cloudflare: unparseable extraction output" };
@@ -355,24 +408,25 @@ describe("invokeSkill — Gemini -> Qwen -> Cloudflare chain", () => {
           recommendedReply: { kind: "do_not_reply_yet" as const, reason: "client asked to think it over", trigger: "client replies again" },
         },
       };
-      invokeGeminiMock.mockResolvedValueOnce(doNotReplyResult);
+      invokeGrokMock.mockResolvedValueOnce(doNotReplyResult);
 
       const result = await invokeSkill(CONTEXT);
 
+      expect(invokeGeminiMock).not.toHaveBeenCalled();
       expect(invokeQwenMock).not.toHaveBeenCalled();
       expect(invokeCloudflareMock).not.toHaveBeenCalled();
       expect(result).toEqual(doNotReplyResult);
     });
 
-    it("skips straight to Cloudflare on a Gemini parse_failure when Qwen credentials are unset", async () => {
-      delete process.env.QWEN_API_KEY;
-      invokeGeminiMock.mockResolvedValueOnce(PARSE_FAILURE_RESULT);
-      invokeCloudflareMock.mockResolvedValueOnce(SUCCESS_RESULT);
+    it("skips straight to Qwen on a Grok parse_failure when Gemini credentials are unset", async () => {
+      delete process.env.GEMINI_API_KEY;
+      invokeGrokMock.mockResolvedValueOnce(PARSE_FAILURE_RESULT);
+      invokeQwenMock.mockResolvedValueOnce(SUCCESS_RESULT);
 
       const result = await invokeSkill(CONTEXT);
 
-      expect(invokeQwenMock).not.toHaveBeenCalled();
-      expect(invokeCloudflareMock).toHaveBeenCalledOnce();
+      expect(invokeGeminiMock).not.toHaveBeenCalled();
+      expect(invokeQwenMock).toHaveBeenCalledOnce();
       expect(result).toEqual(SUCCESS_RESULT);
     });
   });

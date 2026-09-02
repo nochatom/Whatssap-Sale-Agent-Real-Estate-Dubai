@@ -1,6 +1,7 @@
 import { loadSkillMarkdown } from "./skill-file";
 import { CloudflareQuotaExceededError, invokeCloudflare } from "./providers/cloudflare";
 import { invokeGemini } from "./providers/gemini";
+import { invokeGrok } from "./providers/xai";
 import { invokeQwen } from "./providers/qwen";
 import type { SkillInvocationContext, SkillInvocationResult } from "./types";
 
@@ -124,9 +125,43 @@ async function tryQwenFallback(
 }
 
 /**
- * The one and only routing policy: Gemini -> Qwen -> Cloudflare, for EVERY
- * invokeSkill() call. AI_PROVIDER is intentionally not read anywhere in this
- * file — the prior design let it pin routing to a single named provider
+ * Second stage: Gemini. Own credential pre-check, same shape as the Qwen and
+ * Cloudflare stages below it — this used to be the primary stage itself (no
+ * pre-check needed, its own throw was caught directly by invokeProviderChain),
+ * demoted one position when Grok took over as primary (2026-09-03). On any
+ * failure, moves to Qwen with the identical context and Skill markdown
+ * Gemini itself received.
+ */
+async function tryGeminiFallback(
+  context: SkillInvocationContext,
+  primaryErr: Error,
+): Promise<SkillInvocationResult> {
+  if (!process.env.GEMINI_API_KEY) {
+    console.error("invokeSkill: no Gemini fallback is configured (GEMINI_API_KEY not set), attempting Qwen", {
+      reason: primaryErr.message,
+    });
+    return tryQwenFallback(context, primaryErr);
+  }
+
+  try {
+    const result = await invokeGemini(context, SKILL_MARKDOWN);
+    if (result.status !== "parse_failure") {
+      console.log("invokeSkill: Gemini fallback succeeded", { status: result.status });
+      return result;
+    }
+    console.error("invokeSkill: Gemini fallback returned an unusable response, attempting Qwen", { reason: result.reason });
+    return tryQwenFallback(context, new Error(`unusable_response: ${result.reason}`));
+  } catch (err) {
+    const geminiErr = err instanceof Error ? err : new Error(String(err));
+    console.error("invokeSkill: Gemini fallback also failed, attempting Qwen", { reason: geminiErr.message });
+    return tryQwenFallback(context, geminiErr);
+  }
+}
+
+/**
+ * The one and only routing policy: Grok -> Gemini -> Qwen -> Cloudflare, for
+ * EVERY invokeSkill() call. AI_PROVIDER is intentionally not read anywhere in
+ * this file — the prior design let it pin routing to a single named provider
  * with only one narrow fallback partner each, and in production that meant
  * an explicit AI_PROVIDER=cloudflare silently removed the other configured
  * providers from the picture entirely. Fixed at the routing level: this
@@ -137,28 +172,31 @@ async function tryQwenFallback(
  * demoted out of the primary slot for returning raw JSON instead of the
  * natural-language reasoning the Skill's prompt expects, and for
  * disregarding build-prompt.ts's deterministic per-turn guards. Gemini
- * promoted to primary in its place.
+ * promoted to primary in its place, then Grok promoted ahead of Gemini
+ * (2026-09-03, explicit request) — see xai.ts's own comment for the caveat
+ * that Grok's integration shipped without a live API call (account had no
+ * credits at the time), unlike every other provider in this chain.
  *
- * Every call is fresh and stateless — it always starts at Gemini again
+ * Every call is fresh and stateless — it always starts at Grok again
  * regardless of what a previous call fell back to. A RETURNED parse_failure
  * is fallback-worthy here too, not just a thrown error, same as the prior
  * default chain's semantics.
  */
 async function invokeProviderChain(context: SkillInvocationContext): Promise<SkillInvocationResult> {
-  let geminiErr: Error;
+  let grokErr: Error;
   try {
-    const result = await invokeGemini(context, SKILL_MARKDOWN);
+    const result = await invokeGrok(context, SKILL_MARKDOWN);
     if (result.status !== "parse_failure") {
       return result;
     }
-    console.error("invokeSkill: Gemini returned an unusable response, attempting Qwen fallback", { reason: result.reason });
-    geminiErr = new Error(`unusable_response: ${result.reason}`);
+    console.error("invokeSkill: Grok returned an unusable response, attempting Gemini fallback", { reason: result.reason });
+    grokErr = new Error(`unusable_response: ${result.reason}`);
   } catch (err) {
-    geminiErr = err instanceof Error ? err : new Error(String(err));
-    console.error("invokeSkill: primary provider (Gemini) failed, attempting Qwen fallback", { reason: geminiErr.message });
+    grokErr = err instanceof Error ? err : new Error(String(err));
+    console.error("invokeSkill: primary provider (Grok) failed, attempting Gemini fallback", { reason: grokErr.message });
   }
 
-  return tryQwenFallback(context, geminiErr);
+  return tryGeminiFallback(context, grokErr);
 }
 
 export async function invokeSkill(context: SkillInvocationContext): Promise<SkillInvocationResult> {
