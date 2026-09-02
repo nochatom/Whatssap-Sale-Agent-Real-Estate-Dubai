@@ -37,10 +37,18 @@ interface WhatsAppWebhookMessage {
   errors?: WhatsAppWebhookMessageError[];
 }
 
+interface WhatsAppWebhookStatusError {
+  code?: number;
+  title?: string;
+  message?: string;
+}
+
 interface WhatsAppWebhookStatus {
   id: string;
   status: string;
   timestamp: string;
+  /** Present on a "failed" status — Meta's reason for the failure (e.g. code 131049 for marketing-message frequency limiting). */
+  errors?: WhatsAppWebhookStatusError[];
 }
 
 interface WhatsAppWebhookMetadata {
@@ -91,6 +99,10 @@ export interface ParsedStatusUpdate {
   /** Meta's raw status string ("sent" | "delivered" | "read" | "failed", lowercase) — mapped to MessageStatus by the caller, not guessed here. */
   status: string;
   timestamp: string;
+  /** Meta's numeric error code from a "failed" status, when present (e.g. 131049). */
+  errorCode?: number;
+  /** Meta's human-readable reason, title preferred over message, when present. */
+  errorMessage?: string;
 }
 
 const MEDIA_FIELD_BY_TYPE: Record<string, "image" | "document" | "audio" | "video" | "sticker"> = {
@@ -155,9 +167,14 @@ export function extractStatusUpdates(payload: WhatsAppWebhookPayload): ParsedSta
   const statuses = value?.statuses;
   if (!statuses || statuses.length === 0) return [];
 
-  return statuses.map((s) => ({
-    waMessageId: s.id,
-    status: s.status,
-    timestamp: s.timestamp,
-  }));
+  return statuses.map((s) => {
+    const firstError = s.errors?.[0];
+    return {
+      waMessageId: s.id,
+      status: s.status,
+      timestamp: s.timestamp,
+      errorCode: firstError?.code,
+      errorMessage: firstError?.title ?? firstError?.message,
+    };
+  });
 }

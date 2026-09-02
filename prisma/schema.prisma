@@ -161,6 +161,12 @@ model Message {
   /// removing the original message doesn't cascade-delete replies to it.
   replyToMessageId String?
   status          MessageStatus
+  /// Meta's error code from a "failed" status webhook event (e.g. 131049 for
+  /// marketing-message frequency limiting) — null unless status is FAILED
+  /// and Meta actually included error detail. Diagnostic only: lets a failed
+  /// send tell us why instead of just that it failed.
+  statusErrorCode    Int?
+  statusErrorMessage String?
   createdAt       DateTime         @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id])

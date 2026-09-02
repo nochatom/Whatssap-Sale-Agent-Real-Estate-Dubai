@@ -33,10 +33,13 @@ const META_STATUS_MAP: Record<string, MessageStatus> = {
 
 // Guards against out-of-order webhook delivery (a real, documented Meta
 // behavior) regressing a message from e.g. READ back down to DELIVERED.
+// FAILED is deliberately NOT part of this ladder — see the dedicated check
+// below, applyStatusUpdates. It's a terminal, out-of-band outcome (Meta
+// never sends both "sent" and "failed" as forward progress on the same
+// message the way it does sent -> delivered -> read), not a rung above SENT.
 const STATUS_RANK: Partial<Record<MessageStatus, number>> = {
   QUEUED: 0,
   SENT: 1,
-  FAILED: 1,
   DELIVERED: 2,
   READ: 3,
 };
@@ -50,11 +53,31 @@ async function applyStatusUpdates(payload: WhatsAppWebhookPayload): Promise<void
     const message = await prisma.message.findUnique({ where: { waMessageId: update.waMessageId } });
     if (!message) continue; // status for a message we don't have (e.g. pre-dates this deployment)
 
-    const currentRank = STATUS_RANK[message.status] ?? -1;
-    const nextRank = STATUS_RANK[nextStatus] ?? -1;
-    if (nextRank <= currentRank) continue;
+    if (nextStatus === "FAILED") {
+      // Every message starts at SENT, which shares no rank with FAILED —
+      // giving FAILED an ordinal rank meant it could never actually be
+      // recorded (nextRank <= currentRank was always true from SENT). Apply
+      // it as long as we haven't already recorded a later, successful
+      // outcome, and haven't already recorded this same failure.
+      if (message.status === "DELIVERED" || message.status === "READ" || message.status === "FAILED") continue;
+    } else {
+      const currentRank = STATUS_RANK[message.status] ?? -1;
+      const nextRank = STATUS_RANK[nextStatus] ?? -1;
+      if (nextRank <= currentRank) continue;
+    }
 
-    await prisma.message.update({ where: { id: message.id }, data: { status: nextStatus } });
+    await prisma.message.update({
+      where: { id: message.id },
+      data: {
+        status: nextStatus,
+        // Only a "failed" status ever carries Meta's error detail — leave
+        // both null otherwise rather than overwriting with undefined-derived
+        // nulls on every other status transition.
+        ...(nextStatus === "FAILED"
+          ? { statusErrorCode: update.errorCode ?? null, statusErrorMessage: update.errorMessage ?? null }
+          : {}),
+      },
+    });
   }
 }
 
