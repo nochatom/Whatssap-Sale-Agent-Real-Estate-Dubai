@@ -118,6 +118,11 @@ export async function sendAiReply(payload: SendAiReplyPayload): Promise<SendAiRe
     prisma.message.findMany({
       where: { conversationId: payload.conversationId },
       orderBy: { createdAt: "asc" },
+      // Negative take = last N rows in the given order (Prisma's own
+      // cursor-less "last N" idiom) -- bounds the Skill's context to a fixed
+      // window instead of the entire conversation's history, which only
+      // ever grows. A no-op for a conversation with 15 or fewer messages.
+      take: -15,
     }),
     fetchReachedMilestones(payload.conversationId),
   ]);

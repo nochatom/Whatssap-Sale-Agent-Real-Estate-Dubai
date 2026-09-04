@@ -299,6 +299,9 @@ export async function runScheduledFollowUp(
   const history = await prisma.message.findMany({
     where: { conversationId: payload.conversationId },
     orderBy: { createdAt: "asc" },
+    // Same fixed 15-message window as send-ai-reply.ts, for the identical
+    // reason -- both paths feed the same Skill via the same context shape.
+    take: -15,
   });
 
   const skillMessages: SkillInputMessage[] = history.map((m) => ({

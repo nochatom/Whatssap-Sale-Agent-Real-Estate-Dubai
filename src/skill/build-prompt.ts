@@ -463,12 +463,30 @@ function summarizeRepeatedReplies(messages: SkillInputMessage[]): string | null 
 // (e.g. "Ok I wanna pay now" still contains "wanna"/"pay"/"now", none of
 // which are in this list, so the message as a whole still fails the
 // every-word-must-match test below and is correctly NOT flagged).
+// Arabic entries confirmed against a real production incident (2026-09-04,
+// axiom-gps-whatsapp-agent): a bare "مرحبا" after the customer had already
+// received the full product/price/order-info reply caused the model to
+// resend that entire reply, because every word below was previously
+// English-only — isLowContentMessage() never matched an Arabic greeting, so
+// summarizeFreshTurnCheck() never fired for this Skill's Arabic-speaking
+// customers. Includes Modern Standard Arabic plus common Algerian-dialect
+// forms (this Skill's real customer base — see SKILL.md's own brand-tone
+// notes), same "greetings/acknowledgments only, no real content words"
+// scope as the English list. Extend if another real low-content word shows
+// up in production, same as every other list in this file.
 const LOW_CONTENT_WORDS = new Set([
   "hi", "hii", "hiya", "hey", "heyy", "hello", "yo", "hola",
   "good", "morning", "afternoon", "evening", "day",
   "how", "r", "are", "you", "u", "doing", "going", "it", "whats", "what's", "wassup", "sup",
   "there", "still", "you're", "youre",
   "ok", "okay", "k", "kk", "sure", "thanks", "thank", "np", "cool", "nice", "alright", "yep", "yup", "fine", "great", "awesome",
+  // Arabic (MSA + Algerian dialect) greetings, acknowledgments, thanks
+  "مرحبا", "مرحبتين", "اهلا", "أهلا", "هلا", "هلو",
+  "سلام", "السلام", "عليكم", "وعليكم",
+  "صباح", "مساء", "الخير", "النور",
+  "نعم", "أيوة", "ايوه", "لا", "تمام", "ماشي", "حسنا", "اوك", "أوكي", "اوكي",
+  "شكرا", "متشكر", "يعطيك", "الصحة", "يعطيكم",
+  "كيفاش", "كيراك", "راك", "لاباس", "بخير", "الحمدلله",
 ]);
 
 const MAX_LOW_CONTENT_WORDS = 6;

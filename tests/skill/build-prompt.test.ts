@@ -389,6 +389,22 @@ describe("buildSkillInput — fresh-turn check (low-content latest message)", ()
     );
     expect(input).not.toContain("Fresh-turn check");
   });
+
+  // Confirmed via a real production incident (2026-09-04,
+  // axiom-gps-whatsapp-agent): a bare "مرحبا" after the customer had already
+  // received the full product/price/order-info reply caused the model to
+  // resend that entire reply, because LOW_CONTENT_WORDS was English-only.
+  it("flags common Arabic/Algerian-dialect greetings and acknowledgments the same way as English ones", () => {
+    for (const greeting of ["مرحبا", "السلام عليكم", "وعليكم السلام", "نعم", "شكرا", "تمام", "اهلا", "كيفاش راك"]) {
+      const input = buildSkillInput(contextWith([msg("inbound", greeting)]));
+      expect(input, `expected "${greeting}" to be flagged`).toContain("Fresh-turn check");
+    }
+  });
+
+  it("does NOT flag a genuine Arabic question or order details, even though some words overlap with greetings", () => {
+    const input = buildSkillInput(contextWith([msg("inbound", "نعم اريد الطلب، الاسم محمد والعنوان الجزائر العاصمة")]));
+    expect(input).not.toContain("Fresh-turn check");
+  });
 });
 
 describe("buildSkillInput — payment claim guard", () => {
