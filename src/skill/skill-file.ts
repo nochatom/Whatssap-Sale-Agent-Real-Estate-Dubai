@@ -1,7 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
 
-export const SKILL_DIR = path.join(process.cwd(), "skills", "real-estate-whatsapp-sales");
+// Switched from "real-estate-whatsapp-sales" to "axiom-gps-whatsapp-agent"
+// (2026-09-04, explicit request) — the old real-estate Skill is deliberately
+// left in place on disk, untouched and unreferenced, not deleted. Swapping
+// this constant is the entire mechanism for changing which Skill is "active"
+// for WhatsApp; nothing else in this pipeline needs to know which business
+// it's currently running.
+export const SKILL_DIR = path.join(process.cwd(), "skills", "axiom-gps-whatsapp-agent");
 export const SKILL_MD_PATH = path.join(SKILL_DIR, "SKILL.md");
 
 const REFERENCE_PATTERN = /references\/[\w-]+\.md/g;
