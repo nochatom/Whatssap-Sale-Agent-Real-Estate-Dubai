@@ -65,6 +65,10 @@ export const SKILL_DECISION_JSON_SCHEMA = {
           properties: {
             kind: { const: "reply" },
             text: { type: "string" },
+            // Optional — see RecommendedReply.image in types.ts. Not in
+            // `required`, same "best-effort, never parse-blocking" pattern
+            // already used for clientAnalysis.milestone above.
+            image: { type: "string" },
           },
           required: ["kind", "text"],
           additionalProperties: false,
@@ -102,7 +106,8 @@ function isRecommendedReply(value: unknown): value is RecommendedReply {
   if (typeof value !== "object" || value === null) return false;
   const v = value as Record<string, unknown>;
   if (v.kind === "reply") {
-    return typeof v.text === "string";
+    if (typeof v.text !== "string") return false;
+    return v.image === undefined || typeof v.image === "string";
   }
   if (v.kind === "do_not_reply_yet" || v.kind === "do_not_follow_up_yet") {
     return typeof v.reason === "string" && typeof v.trigger === "string";

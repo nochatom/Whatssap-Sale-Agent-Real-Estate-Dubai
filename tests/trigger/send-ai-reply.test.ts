@@ -1,5 +1,5 @@
 import { Prisma } from "@prisma/client";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const messageFindFirst = vi.fn();
 const messageFindMany = vi.fn();
@@ -41,6 +41,11 @@ vi.mock("@/skill/invoke", async (importOriginal) => {
 const sendOutboundTrigger = vi.fn();
 vi.mock("@trigger/send-outbound", () => ({
   sendOutboundTask: { trigger: (...args: unknown[]) => sendOutboundTrigger(...args) },
+}));
+
+const uploadMediaMock = vi.fn();
+vi.mock("@/whatsapp/transport", () => ({
+  uploadMedia: (...args: unknown[]) => uploadMediaMock(...args),
 }));
 
 const maybeScheduleFollowUpMock = vi.fn();
@@ -122,6 +127,110 @@ describe("sendAiReply", () => {
     maybeScheduleFollowUpMock.mockReset().mockResolvedValue({ scheduled: false, reason: "n/a" });
     sendAiReplyTrigger.mockReset().mockResolvedValue({ id: "run_retry" });
     telegramNotificationTrigger.mockReset().mockResolvedValue({ id: "run_telegram" });
+    uploadMediaMock.mockReset().mockResolvedValue({ mediaId: "meta_media_123" });
+  });
+
+  describe("image attachment (recommendedReply.image)", () => {
+    const originalAccessToken = process.env.WHATSAPP_ACCESS_TOKEN;
+
+    beforeEach(() => {
+      process.env.WHATSAPP_ACCESS_TOKEN = "test-access-token";
+    });
+
+    afterEach(() => {
+      if (originalAccessToken === undefined) delete process.env.WHATSAPP_ACCESS_TOKEN;
+      else process.env.WHATSAPP_ACCESS_TOKEN = originalAccessToken;
+    });
+
+    it("uploads and attaches an image that actually exists in the active Skill's assets/images", async () => {
+      invokeSkillMock.mockResolvedValue({
+        status: "success",
+        rawOutput: "CLIENT ANALYSIS\n...",
+        decision: {
+          ...BASE_DECISION_FIELDS,
+          recommendedReply: { kind: "reply" as const, text: "Here's the unboxing!", image: "unboxing.jpg" },
+        },
+      });
+
+      await sendAiReply(PAYLOAD);
+
+      expect(uploadMediaMock).toHaveBeenCalledOnce();
+      const [uploadArgs] = uploadMediaMock.mock.calls[0] ?? [];
+      expect(uploadArgs.phoneNumberId).toBe("999888777");
+      expect(uploadArgs.filename).toBe("unboxing.jpg");
+
+      const [sendArgs] = sendOutboundTrigger.mock.calls[0] ?? [];
+      expect(sendArgs.media).toEqual({ mediaId: "meta_media_123", kind: "image", mimeType: "image/jpeg" });
+      expect(sendArgs.body).toBe("Here's the unboxing!");
+    });
+
+    it("falls back to text-only, without throwing, when the named image doesn't exist on disk", async () => {
+      invokeSkillMock.mockResolvedValue({
+        status: "success",
+        rawOutput: "CLIENT ANALYSIS\n...",
+        decision: {
+          ...BASE_DECISION_FIELDS,
+          recommendedReply: { kind: "reply" as const, text: "Here's the photo!", image: "does-not-exist.jpg" },
+        },
+      });
+
+      const result = await sendAiReply(PAYLOAD);
+
+      expect(result).toEqual({ evaluated: true, status: "success", replyTriggered: true });
+      expect(uploadMediaMock).not.toHaveBeenCalled();
+      const [sendArgs] = sendOutboundTrigger.mock.calls[0] ?? [];
+      expect(sendArgs.media).toBeUndefined();
+      expect(sendArgs.body).toBe("Here's the photo!");
+    });
+
+    it("falls back to text-only, without throwing, when WHATSAPP_ACCESS_TOKEN is not set", async () => {
+      delete process.env.WHATSAPP_ACCESS_TOKEN;
+      invokeSkillMock.mockResolvedValue({
+        status: "success",
+        rawOutput: "CLIENT ANALYSIS\n...",
+        decision: {
+          ...BASE_DECISION_FIELDS,
+          recommendedReply: { kind: "reply" as const, text: "Here's the photo!", image: "unboxing.jpg" },
+        },
+      });
+
+      await sendAiReply(PAYLOAD);
+
+      expect(uploadMediaMock).not.toHaveBeenCalled();
+      const [sendArgs] = sendOutboundTrigger.mock.calls[0] ?? [];
+      expect(sendArgs.media).toBeUndefined();
+    });
+
+    it("rejects a path-traversal attempt rather than reading outside assets/images", async () => {
+      invokeSkillMock.mockResolvedValue({
+        status: "success",
+        rawOutput: "CLIENT ANALYSIS\n...",
+        decision: {
+          ...BASE_DECISION_FIELDS,
+          recommendedReply: { kind: "reply" as const, text: "x", image: "../../../../etc/passwd" },
+        },
+      });
+
+      await sendAiReply(PAYLOAD);
+
+      expect(uploadMediaMock).not.toHaveBeenCalled();
+      const [sendArgs] = sendOutboundTrigger.mock.calls[0] ?? [];
+      expect(sendArgs.media).toBeUndefined();
+    });
+
+    it("does not call uploadMedia at all when no image was requested (the default, common case)", async () => {
+      invokeSkillMock.mockResolvedValue({
+        status: "success",
+        rawOutput: "CLIENT ANALYSIS\n...",
+        decision: { ...BASE_DECISION_FIELDS, recommendedReply: { kind: "reply" as const, text: "AED 500." } },
+      });
+
+      await sendAiReply(PAYLOAD);
+
+      expect(uploadMediaMock).not.toHaveBeenCalled();
+      const [sendArgs] = sendOutboundTrigger.mock.calls[0] ?? [];
+      expect(sendArgs.media).toBeUndefined();
+    });
   });
 
   it("aborts without invoking the Skill when a newer inbound message has arrived", async () => {

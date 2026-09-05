@@ -39,6 +39,8 @@ const GEMINI_DECISION_SCHEMA = {
       properties: {
         kind: { type: "string", enum: ["reply", "do_not_reply_yet", "do_not_follow_up_yet"] },
         text: { type: "string" },
+        // Optional — see RecommendedReply.image in types.ts.
+        image: { type: "string" },
         reason: { type: "string" },
         trigger: { type: "string" },
       },

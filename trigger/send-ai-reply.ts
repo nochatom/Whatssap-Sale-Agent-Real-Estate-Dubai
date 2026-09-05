@@ -1,17 +1,89 @@
+import fs from "node:fs";
+import path from "node:path";
 import { logger, task } from "@trigger.dev/sdk/v3";
 import { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { invokeSkill, isRetryableProviderUnavailable, nextCloudflareQuotaResetAt } from "@/skill/invoke";
 import { extractMilestone, fetchReachedMilestones } from "@/skill/milestones";
+import { SKILL_DIR } from "@/skill/skill-file";
 import type { SkillInputMessage, SkillInvocationContext } from "@/skill/types";
 import { classifyBehaviorState } from "@/whatsapp/behavior-state";
 import { buildReplyIdempotencyKey } from "@/whatsapp/idempotency";
+import { uploadMedia } from "@/whatsapp/transport";
 import { resolveSender } from "@trigger/resolve-sender";
 import { maybeScheduleFollowUp } from "@trigger/schedule-followup";
-import { sendOutboundTask } from "@trigger/send-outbound";
+import { sendOutboundTask, type SendOutboundMedia } from "@trigger/send-outbound";
 import { sendTelegramNotificationTask } from "@trigger/send-telegram-notification";
 import { describeProofMedia, type TelegramMilestone } from "@/telegram/notify";
+
+// Meta's Cloud API only accepts these two MIME types for an image send (see
+// MEDIA_LIMITS.image in src/whatsapp/types.ts) — mapped from extension since
+// Skill assets are static files on disk, not user uploads with a browser-
+// supplied Content-Type.
+const IMAGE_MIME_BY_EXTENSION: Record<string, string> = {
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+};
+
+/**
+ * Resolves an "Image: <filename>" reference from the Skill's own output
+ * (see RecommendedReply.image in types.ts) into an uploaded Meta media id,
+ * or null if anything about that isn't safely resolvable. Deliberately
+ * never throws: an image attachment is an enhancement on top of the text
+ * reply, never a reason to fail the whole send — same "additive, non-fatal"
+ * pattern already used for the Telegram notification and campaign follow-up
+ * scheduling below. The only hard safety rule enforced here is the path
+ * check: `imageFilename` comes from a model's output, so it's resolved
+ * strictly within SKILL_DIR/assets/images and rejected if it would escape
+ * that directory (e.g. via "../"), before ever touching the filesystem for
+ * a real read.
+ */
+async function resolveImageMedia(
+  imageFilename: string,
+  senderPhoneNumberId: string,
+): Promise<SendOutboundMedia | null> {
+  const imagesDir = path.join(SKILL_DIR, "assets", "images");
+  const resolvedPath = path.join(imagesDir, imageFilename);
+  if (path.dirname(resolvedPath) !== imagesDir) {
+    logger.error("send-ai-reply: Skill named an image path outside assets/images, ignoring", { imageFilename });
+    return null;
+  }
+
+  const mimeType = IMAGE_MIME_BY_EXTENSION[path.extname(imageFilename).toLowerCase()];
+  if (!mimeType) {
+    logger.error("send-ai-reply: Skill named an image with an unsupported/missing extension, ignoring", { imageFilename });
+    return null;
+  }
+
+  if (!fs.existsSync(resolvedPath)) {
+    logger.error("send-ai-reply: Skill named an image that doesn't exist in assets/images, ignoring", {
+      imageFilename,
+      resolvedPath,
+    });
+    return null;
+  }
+
+  const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
+  if (!accessToken) {
+    logger.error("send-ai-reply: WHATSAPP_ACCESS_TOKEN not set, cannot upload image, sending text only", { imageFilename });
+    return null;
+  }
+
+  try {
+    const bytes = fs.readFileSync(resolvedPath);
+    const file = new Blob([bytes], { type: mimeType });
+    const uploaded = await uploadMedia({ phoneNumberId: senderPhoneNumberId, accessToken, file, filename: imageFilename });
+    return { mediaId: uploaded.mediaId, kind: "image", mimeType };
+  } catch (err) {
+    logger.error("send-ai-reply: image upload failed, sending text only", {
+      imageFilename,
+      reason: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
+}
 
 export interface SendAiReplyPayload {
   conversationId: string;
@@ -319,6 +391,9 @@ export async function sendAiReply(payload: SendAiReplyPayload): Promise<SendAiRe
   }
   const { campaignId, senderPhoneNumberId } = sender;
 
+  const imageFilename = result.decision.recommendedReply.image;
+  const media = imageFilename ? (await resolveImageMedia(imageFilename, senderPhoneNumberId)) ?? undefined : undefined;
+
   const sendOutboundTriggerStartedAt = Date.now();
   await sendOutboundTask.trigger(
     {
@@ -328,6 +403,7 @@ export async function sendAiReply(payload: SendAiReplyPayload): Promise<SendAiRe
       senderPhoneNumberId,
       idempotencyKey: buildReplyIdempotencyKey(conversation.id, payload.triggeringWaMessageId),
       body: result.decision.recommendedReply.text,
+      media,
     },
     { concurrencyKey: senderPhoneNumberId },
   );

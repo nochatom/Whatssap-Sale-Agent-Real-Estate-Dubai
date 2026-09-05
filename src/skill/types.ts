@@ -39,7 +39,20 @@ export interface SalesStrategy {
 }
 
 export type RecommendedReply =
-  | { kind: "reply"; text: string }
+  | {
+      kind: "reply";
+      text: string;
+      /**
+       * Optional filename (e.g. "product-shot.jpg") of an image the Skill
+       * wants attached to this reply — must match a file the active Skill's
+       * assets/images/ directory actually has; send-ai-reply.ts verifies
+       * this before ever uploading anything, and silently falls back to a
+       * text-only send (never a hard failure) if the file doesn't exist or
+       * the upload fails. Never invented by the extraction stage — omitted
+       * entirely unless the Skill's own prose explicitly named one.
+       */
+      image?: string;
+    }
   | { kind: "do_not_reply_yet"; reason: string; trigger: string }
   | { kind: "do_not_follow_up_yet"; reason: string; trigger: string };
 

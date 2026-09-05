@@ -97,6 +97,31 @@ describe("isSkillDecision — milestone (optional, best-effort)", () => {
   });
 });
 
+describe("isSkillDecision — reply.image (optional)", () => {
+  it("accepts a reply with an image filename", () => {
+    const decision = { ...VALID_DECISION, recommendedReply: { ...VALID_DECISION.recommendedReply, image: "product-shot.jpg" } };
+    expect(isSkillDecision(decision)).toBe(true);
+  });
+
+  it("still accepts a reply with no image field at all", () => {
+    expect(isSkillDecision(VALID_DECISION)).toBe(true);
+  });
+
+  it("rejects a non-string image value", () => {
+    const decision = { ...VALID_DECISION, recommendedReply: { ...VALID_DECISION.recommendedReply, image: 123 } };
+    expect(isSkillDecision(decision)).toBe(false);
+  });
+
+  it("round-trips the image filename through parseExtractionOutput", () => {
+    const decision = { ...VALID_DECISION, recommendedReply: { ...VALID_DECISION.recommendedReply, image: "unboxing.jpg" } };
+    const result = parseExtractionOutput(JSON.stringify(decision));
+    expect(result.ok).toBe(true);
+    if (result.ok && result.decision.recommendedReply.kind === "reply") {
+      expect(result.decision.recommendedReply.image).toBe("unboxing.jpg");
+    }
+  });
+});
+
 describe("parseExtractionOutput", () => {
   it("returns ok with the parsed decision for valid JSON", () => {
     const result = parseExtractionOutput(JSON.stringify(VALID_DECISION));

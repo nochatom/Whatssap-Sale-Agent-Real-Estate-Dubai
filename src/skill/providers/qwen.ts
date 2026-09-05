@@ -86,10 +86,14 @@ Output ONLY a single JSON object (no markdown, no code fences, no extra text) wi
     "objectiveOfReply": string
   },
   "recommendedReply":
-    { "kind": "reply", "text": string }
+    { "kind": "reply", "text": string, "image"?: string }
     | { "kind": "do_not_reply_yet", "reason": string, "trigger": string }
     | { "kind": "do_not_follow_up_yet", "reason": string, "trigger": string }
 }
+
+Only include "image" when the source text's RECOMMENDED WHATSAPP REPLY block
+contains a line starting with "Image:" — set it to the filename after that
+colon, trimmed. Omit the "image" key entirely otherwise; never invent one.
 
 Set clientAnalysis.milestone to the exact value on the Milestone line in the source
 text. If that line is missing entirely, set it to "none" — never omit it.`;
